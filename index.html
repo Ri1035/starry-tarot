@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="星穹塔罗 —— 纯前端塔罗占卜互动网页，支持多牌阵、洗牌与翻牌动画、正逆位解读、一键复制。" />
+  <title>星穹塔罗 · Starry Tarot</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='42' fill='%23110827'/%3E%3Cpath d='M50 22a28 28 0 1 0 0 56 23 23 0 0 1 0-46 28 28 0 0 0 0-10z' fill='%23e8c56b'/%3E%3C/svg%3E" />
+  <!-- 字体：拉丁标题用 Cinzel，中文用 Noto Serif SC（加载失败时回退系统衬线，不影响功能） -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- 背景层：星空粒子画布 + 星云光晕（纯 CSS 动画） -->
+  <canvas id="starfield" aria-hidden="true"></canvas>
+  <div class="bg-nebula" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="#" data-nav="home">
+      <span class="brand-mark">☾</span>
+      <span class="brand-text">星穹塔罗</span>
+    </a>
+    <nav class="site-nav" aria-label="主导航">
+      <button class="nav-link" data-nav="spreads">牌阵</button>
+      <button class="nav-link" data-nav="history">历史</button>
+    </nav>
+  </header>
+
+  <main id="app">
+    <!-- ============ 视图一：首页 ============ -->
+    <section id="view-home" class="view view-home">
+      <h1 class="hero-title">
+        <span class="hero-line">星 穹 塔 罗</span>
+        <span class="hero-en">STARRY TAROT</span>
+      </h1>
+      <p class="hero-sub">在星辰的低语中，照见内心的答案</p>
+
+      <!-- 装饰性悬浮卡牌（纯装饰，aria-hidden） -->
+      <div class="hero-cards" aria-hidden="true">
+        <div class="hero-card hc-1"></div>
+        <div class="hero-card hc-2"></div>
+        <div class="hero-card hc-3"></div>
+      </div>
+
+      <div class="hero-actions">
+        <button id="btn-open-spreads" class="btn btn-primary" type="button">☾　选择牌阵</button>
+        <button id="btn-quick-draw" class="btn btn-ghost" type="button">✦　单卡速抽</button>
+        <button id="btn-history" class="btn btn-ghost" type="button">❖　历史记录</button>
+      </div>
+    </section>
+
+    <!-- ============ 视图二：抽牌 ============ -->
+    <section id="view-draw" class="view view-draw hidden">
+      <div class="draw-header">
+        <h2 id="draw-title" class="section-title"></h2>
+        <p id="draw-desc" class="section-desc"></p>
+      </div>
+      <div id="card-layout" class="card-layout"></div>
+      <div class="draw-actions">
+        <button id="btn-shuffle" class="btn btn-primary" type="button">♻　洗牌</button>
+        <button id="btn-flip-all" class="btn btn-ghost hidden" type="button">◈　全部翻开</button>
+        <button id="btn-back-home" class="btn btn-link" type="button">← 返回</button>
+      </div>
+    </section>
+
+    <!-- ============ 视图三：解读结果 ============ -->
+    <section id="view-reading" class="view view-reading hidden">
+      <div class="reading-header">
+        <h2 id="reading-title" class="section-title"></h2>
+        <p id="reading-date" class="reading-date"></p>
+      </div>
+      <div id="reading-cards" class="reading-cards"></div>
+      <div class="reading-actions">
+        <button id="btn-copy" class="btn btn-primary" type="button">⧉　一键复制解读</button>
+        <button id="btn-save" class="btn btn-ghost" type="button">⌁　保存解读</button>
+        <button id="btn-redraw" class="btn btn-ghost" type="button">↻　再抽一次</button>
+        <button id="btn-reading-home" class="btn btn-link" type="button">← 返回首页</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p class="disclaimer">免责声明：塔罗仅为趣味娱乐，不构成人生、投资、重大决策建议。</p>
+    <p class="copy" id="footer-version"></p>
+  </footer>
+
+  <!-- ============ 弹窗：牌阵选择 ============ -->
+  <div id="modal-spreads" class="modal" role="dialog" aria-modal="true" aria-label="选择牌阵">
+    <div class="modal-panel">
+      <button class="modal-close" data-close="modal-spreads" aria-label="关闭">✕</button>
+      <h3 class="modal-title">选择牌阵</h3>
+      <div id="spread-list" class="spread-list"></div>
+    </div>
+  </div>
+
+  <!-- ============ 弹窗：牌阵预览 ============ -->
+  <div id="modal-preview" class="modal" role="dialog" aria-modal="true" aria-label="牌阵预览">
+    <div class="modal-panel">
+      <button class="modal-close" data-close="modal-preview" aria-label="关闭">✕</button>
+      <h3 id="preview-name" class="modal-title"></h3>
+      <p id="preview-desc" class="modal-desc"></p>
+      <div id="preview-layout" class="preview-layout"></div>
+      <button id="btn-start-draw" class="btn btn-primary btn-block" type="button">✦　开始占卜</button>
+    </div>
+  </div>
+
+  <!-- ============ 弹窗：历史记录 ============ -->
+  <div id="modal-history" class="modal" role="dialog" aria-modal="true" aria-label="历史记录">
+    <div class="modal-panel">
+      <button class="modal-close" data-close="modal-history" aria-label="关闭">✕</button>
+      <h3 class="modal-title">历史记录</h3>
+      <div id="history-list" class="history-list"></div>
+      <div class="modal-footer">
+        <button id="btn-history-clear" class="btn btn-danger btn-block" type="button">清空全部记录</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 弹窗：历史解读详情 ============ -->
+  <div id="modal-detail" class="modal" role="dialog" aria-modal="true" aria-label="解读详情">
+    <div class="modal-panel">
+      <button class="modal-close" data-close="modal-detail" aria-label="关闭">✕</button>
+      <div id="detail-content" class="detail-content"></div>
+      <button id="btn-detail-copy" class="btn btn-primary btn-block" type="button">⧉　复制该解读</button>
+    </div>
+  </div>
+
+  <!-- 轻提示 -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/data/cards.js"></script>
+  <script src="js/data/spreads.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
