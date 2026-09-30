@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 const DISCLAIMER = '免责声明：塔罗仅为趣味娱乐，不构成人生、投资、重大决策建议。';
@@ -113,12 +113,13 @@ function initStarfield() {
 }
 
 /* ---------- 4. 视图切换 / 弹窗 / Toast ---------- */
-const VIEWS = ['view-home', 'view-draw', 'view-reading'];
+const VIEWS = ['view-home', 'view-gallery', 'view-draw', 'view-reading'];
 
 function showView(name) {
   for (const v of VIEWS) {
     document.getElementById(v).classList.toggle('hidden', v !== 'view-' + name);
   }
+  if (name === 'gallery') renderGallery(); // 每次进入重渲染，重放入场动画
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -233,6 +234,83 @@ function previewSlot(label) {
   slot.className = 'preview-slot';
   slot.innerHTML = '<div class="preview-card"></div><span class="pv-label">' + label + '</span>';
   return slot;
+}
+
+/* ---------- 5.5 塔罗画廊 ---------- */
+
+const GALLERY_FILTERS = {
+  all: { label: '全部', match: () => true },
+  major: { label: '大阿卡纳', match: (c) => c.suit === 'major' },
+  wands: { label: '权杖', match: (c) => c.suit === 'wands' },
+  cups: { label: '圣杯', match: (c) => c.suit === 'cups' },
+  swords: { label: '宝剑', match: (c) => c.suit === 'swords' },
+  pentacles: { label: '星币', match: (c) => c.suit === 'pentacles' }
+};
+
+let galleryFilter = 'all';
+
+/** 渲染画廊网格（按当前筛选） */
+function renderGallery() {
+  const grid = $('#gallery-grid');
+  grid.innerHTML = '';
+  const cards = TAROT_CARDS.filter(GALLERY_FILTERS[galleryFilter].match);
+  cards.forEach((card, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'g-card';
+    btn.setAttribute('aria-label', card.name);
+    btn.style.setProperty('--i', i);
+    btn.innerHTML =
+      `<span class="g-card-inner">
+         <img src="assets/cards/${card.img}" alt="${card.name}" loading="lazy" />
+         <span class="g-card-name">${card.name}</span>
+         <span class="g-card-en">${card.nameEn}</span>
+       </span>`;
+    btn.addEventListener('click', () => openCardDetail(card));
+    grid.appendChild(btn);
+  });
+}
+
+/** 切换画廊筛选 */
+function setGalleryFilter(filter) {
+  galleryFilter = filter;
+  $$('#gallery-filters .filter-chip').forEach((chip) => {
+    const active = chip.dataset.filter === filter;
+    chip.classList.toggle('active', active);
+    chip.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  renderGallery();
+}
+
+/** 打开卡牌详情弹窗 */
+function openCardDetail(card) {
+  const box = $('#card-detail');
+  box.innerHTML =
+    `<img class="card-detail-img" src="assets/cards/${card.img}" alt="${card.name}" />
+     <div>
+       <div class="card-detail-head">
+         <div class="card-detail-name">${card.name}</div>
+         <span class="card-detail-en">${card.nameEn}</span>
+       </div>
+       <div class="card-detail-tags">
+         <span class="card-tag">${GALLERY_FILTERS[card.suit].label}</span>
+         ${card.arcana === 'minor' ? '<span class="card-tag">小阿卡纳</span>' : ''}
+         ${card.keywords.map((k) => `<span class="card-tag">${k}</span>`).join('')}
+       </div>
+       <div class="card-detail-section">
+         <h4>牌意</h4>
+         <p>${card.meaning}</p>
+       </div>
+       <div class="card-detail-section card-detail-upright">
+         <h4>正位</h4>
+         <p>${card.upright}</p>
+       </div>
+       <div class="card-detail-section card-detail-reversed">
+         <h4>逆位</h4>
+         <p>${card.reversed}</p>
+       </div>
+     </div>`;
+  openModal('modal-card');
 }
 
 /* ---------- 6. 抽牌流程 ---------- */
@@ -685,6 +763,7 @@ function initEvents() {
   // 首页按钮
   $('#btn-open-spreads').addEventListener('click', () => { renderSpreadList(); openModal('modal-spreads'); });
   $('#btn-quick-draw').addEventListener('click', () => startDraw(getSpread('single')));
+  $('#btn-gallery').addEventListener('click', () => showView('gallery'));
   $('#btn-history').addEventListener('click', () => { renderHistory(); openModal('modal-history'); });
 
   // 导航
@@ -693,8 +772,14 @@ function initEvents() {
       const target = el.dataset.nav;
       if (target === 'spreads') { renderSpreadList(); openModal('modal-spreads'); }
       else if (target === 'history') { renderHistory(); openModal('modal-history'); }
+      else if (target === 'gallery') { showView('gallery'); }
       else if (target === 'home') { showView('home'); }
     });
+  });
+
+  // 画廊筛选
+  $$('#gallery-filters .filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => setGalleryFilter(chip.dataset.filter));
   });
 
   // 抽牌视图

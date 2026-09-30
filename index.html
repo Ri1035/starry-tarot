@@ -24,6 +24,7 @@
     </a>
     <nav class="site-nav" aria-label="主导航">
       <button class="nav-link" data-nav="spreads">牌阵</button>
+      <button class="nav-link" data-nav="gallery">画廊</button>
       <button class="nav-link" data-nav="history">历史</button>
     </nav>
   </header>
@@ -47,11 +48,32 @@
       <div class="hero-actions">
         <button id="btn-open-spreads" class="btn btn-primary" type="button">☾　选择牌阵</button>
         <button id="btn-quick-draw" class="btn btn-ghost" type="button">✦　单卡速抽</button>
+        <button id="btn-gallery" class="btn btn-ghost" type="button">✧　塔罗画廊</button>
         <button id="btn-history" class="btn btn-ghost" type="button">❖　历史记录</button>
       </div>
     </section>
 
-    <!-- ============ 视图二：抽牌 ============ -->
+    <!-- ============ 视图二：塔罗画廊（展示全部 78 张卡牌） ============ -->
+    <section id="view-gallery" class="view view-gallery hidden">
+      <div class="gallery-header">
+        <h2 class="section-title">塔罗画廊</h2>
+        <p class="section-desc">翻开每一张牌，聆听它藏在星辰里的故事</p>
+        <div id="gallery-filters" class="gallery-filters" role="tablist" aria-label="按牌组筛选">
+          <button class="filter-chip active" data-filter="all" role="tab" aria-selected="true">全部</button>
+          <button class="filter-chip" data-filter="major" role="tab" aria-selected="false">大阿卡纳</button>
+          <button class="filter-chip" data-filter="wands" role="tab" aria-selected="false">权杖</button>
+          <button class="filter-chip" data-filter="cups" role="tab" aria-selected="false">圣杯</button>
+          <button class="filter-chip" data-filter="swords" role="tab" aria-selected="false">宝剑</button>
+          <button class="filter-chip" data-filter="pentacles" role="tab" aria-selected="false">星币</button>
+        </div>
+      </div>
+      <div id="gallery-grid" class="gallery-grid"></div>
+      <div class="gallery-actions">
+        <button class="btn btn-link" data-nav="home" type="button">← 返回首页</button>
+      </div>
+    </section>
+
+    <!-- ============ 视图三：抽牌 ============ -->
     <section id="view-draw" class="view view-draw hidden">
       <div class="draw-header">
         <h2 id="draw-title" class="section-title"></h2>
@@ -65,7 +87,7 @@
       </div>
     </section>
 
-    <!-- ============ 视图三：解读结果 ============ -->
+    <!-- ============ 视图四：解读结果 ============ -->
     <section id="view-reading" class="view view-reading hidden">
       <div class="reading-header">
         <h2 id="reading-title" class="section-title"></h2>
@@ -124,6 +146,14 @@
       <button class="modal-close" data-close="modal-detail" aria-label="关闭">✕</button>
       <div id="detail-content" class="detail-content"></div>
       <button id="btn-detail-copy" class="btn btn-primary btn-block" type="button">⧉　复制该解读</button>
+    </div>
+  </div>
+
+  <!-- ============ 弹窗：卡牌详情（画廊用） ============ -->
+  <div id="modal-card" class="modal" role="dialog" aria-modal="true" aria-label="卡牌详情">
+    <div class="modal-panel modal-panel-card">
+      <button class="modal-close" data-close="modal-card" aria-label="关闭">✕</button>
+      <div id="card-detail" class="card-detail"></div>
     </div>
   </div>
 

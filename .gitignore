@@ -6,3 +6,6 @@
 # 本地工具缓存
 .wrangler/
 node_modules/
+
+# 用户上传的临时文件（只读，不入库）
+.uploads/
