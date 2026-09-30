@@ -778,3 +778,193 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   pointer-events: none;
   z-index: 0;
 }
+
+/* ============================================================
+ * v1.2.0 · 新布局 / 牌阵分类 / 预览信息 / 关于页 / 版本徽标
+ * ============================================================ */
+
+/* 页头版本徽标 */
+.header-right { display: flex; align-items: center; gap: 14px; }
+.version-badge {
+  font-family: var(--font-display);
+  font-size: 11px; letter-spacing: 1px;
+  color: var(--gold-soft);
+  border: 1px solid var(--line-gold);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  animation: pulse 3s ease-in-out infinite;
+}
+
+/* ---------- 新布局：双栏 ---------- */
+.layout-columns { display: flex; flex-direction: column; align-items: center; gap: clamp(18px, 3vw, 30px); }
+.layout-columns .row { display: flex; gap: clamp(14px, 2.4vw, 24px); justify-content: center; }
+.layout-columns .cols { display: flex; gap: clamp(28px, 6vw, 72px); justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+.layout-columns .col { display: flex; flex-direction: column; gap: clamp(16px, 2.6vw, 26px); align-items: center; }
+
+/* ---------- 新布局：金字塔 ---------- */
+.layout-pyramid { display: flex; flex-direction: column; align-items: center; gap: clamp(16px, 2.6vw, 26px); }
+.layout-pyramid .row { display: flex; gap: clamp(14px, 2.4vw, 24px); justify-content: center; }
+
+/* ---------- 新布局：十字形（5 张） ---------- */
+.layout-cross5 .cross5-grid {
+  display: grid;
+  grid-template-areas:
+    '. top .'
+    'left center right'
+    '. bottom .';
+  gap: clamp(14px, 2.4vw, 24px);
+  align-items: center;
+  justify-items: center;
+}
+.layout-cross5 .area-center { grid-area: center; }
+.layout-cross5 .area-top { grid-area: top; }
+.layout-cross5 .area-left { grid-area: left; }
+.layout-cross5 .area-right { grid-area: right; }
+.layout-cross5 .area-bottom { grid-area: bottom; }
+
+/* ---------- 新布局：马蹄铁（7 张 U 形） ---------- */
+.layout-horseshoe .horseshoe-grid {
+  display: grid;
+  grid-template-areas:
+    'a . g'
+    'b . f'
+    'c d e';
+  gap: clamp(14px, 2.4vw, 24px);
+  align-items: center;
+  justify-items: center;
+}
+.layout-horseshoe .area-a { grid-area: a; }
+.layout-horseshoe .area-b { grid-area: b; }
+.layout-horseshoe .area-c { grid-area: c; }
+.layout-horseshoe .area-d { grid-area: d; }
+.layout-horseshoe .area-e { grid-area: e; }
+.layout-horseshoe .area-f { grid-area: f; }
+.layout-horseshoe .area-g { grid-area: g; }
+
+/* ---------- 新布局：十二宫（4×3） ---------- */
+.layout-zodiac {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(10px, 2vw, 20px);
+  max-width: 860px;
+  margin: 0 auto;
+  justify-items: center;
+}
+.layout-zodiac .tarot-card { width: clamp(68px, 9vw, 108px); }
+
+/* ---------- 牌阵分类筛选（弹窗内） ---------- */
+.spread-filters { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 18px; }
+
+/* 牌阵卡片徽标 */
+.spread-item .s-name { display: block; }
+.s-badge {
+  display: inline-block;
+  font-size: 10px; letter-spacing: 1px;
+  color: var(--gold-soft);
+  border: 1px solid rgba(232, 197, 107, 0.35);
+  border-radius: 999px;
+  padding: 0 8px;
+  margin-bottom: 6px;
+  background: rgba(232, 197, 107, 0.08);
+}
+
+/* ---------- 牌阵预览：分类 / 张数 / 信息 ---------- */
+.preview-meta {
+  display: flex; justify-content: center; align-items: center; gap: 10px;
+  margin-bottom: 16px;
+}
+.p-badge {
+  font-size: 12px; letter-spacing: 2px;
+  color: #110827;
+  background: linear-gradient(135deg, var(--gold), var(--gold-soft));
+  border-radius: 999px;
+  padding: 2px 14px;
+  box-shadow: var(--glow-gold);
+  font-weight: 700;
+}
+.p-count {
+  font-size: 12px; letter-spacing: 1px;
+  color: var(--text-dim);
+  border: 1px solid var(--line-gold);
+  border-radius: 999px;
+  padding: 2px 12px;
+}
+.preview-info {
+  display: grid; gap: 10px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: rgba(139, 108, 240, 0.06);
+  border: 1px solid rgba(139, 108, 240, 0.22);
+  text-align: left;
+}
+.p-info-item p { font-size: 13px; color: var(--text-dim); line-height: 1.7; }
+.p-info-lbl {
+  display: block;
+  font-size: 11px; letter-spacing: 2px;
+  color: var(--gold);
+  margin-bottom: 2px;
+}
+
+/* ---------- 关于我（个人主页） ---------- */
+.view-about { display: flex; justify-content: center; align-items: center; min-height: calc(100vh - 150px); }
+.about-card {
+  width: min(520px, 94vw);
+  text-align: center;
+  padding: clamp(28px, 5vw, 44px);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(70% 60% at 80% 0%, rgba(139, 108, 240, 0.12), transparent 70%),
+    var(--bg-panel);
+  border: 1px solid var(--line-gold);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), var(--glow-gold);
+  animation: fadeUp 0.7s ease both;
+}
+.about-avatar-wrap { position: relative; width: 132px; height: 132px; margin: 0 auto 18px; }
+.about-avatar {
+  width: 128px; height: 128px;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  box-shadow: var(--glow-gold);
+  object-fit: cover;
+  animation: floatCard 5s ease-in-out infinite;
+}
+.about-avatar-ring {
+  position: absolute; inset: -8px;
+  border-radius: 50%;
+  border: 1px dashed rgba(232, 197, 107, 0.5);
+  animation: ringSpin 20s linear infinite;
+}
+@keyframes ringSpin { to { transform: rotate(360deg); } }
+.about-name {
+  font-family: var(--font-display);
+  font-size: 30px; letter-spacing: 6px;
+  color: var(--gold-soft);
+  text-shadow: var(--glow-gold);
+}
+.about-role { color: var(--violet-soft); font-size: 13px; letter-spacing: 3px; margin-top: 6px; }
+.about-bio { color: var(--text-dim); font-size: 14px; line-height: 2; margin: 16px 0 22px; }
+.about-contact { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.about-email {
+  font-size: 14px; letter-spacing: 1px;
+  color: var(--text);
+  border: 1px solid var(--line-gold);
+  background: rgba(232, 197, 107, 0.05);
+  border-radius: 999px;
+  padding: 8px 20px;
+}
+.about-note { color: var(--text-faint); font-size: 11px; letter-spacing: 1px; margin-top: 18px; }
+.about-card .btn-link { margin-top: 10px; }
+
+/* ---------- v1.2.0 响应式 ---------- */
+@media (max-width: 768px) {
+  .layout-zodiac { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 480px) {
+  .layout-zodiac { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .layout-cross5 .cross5-grid, .layout-horseshoe .horseshoe-grid { gap: 10px; }
+  .layout-columns .cols { gap: 14px; }
+  .header-right { gap: 8px; }
+  .version-badge { display: none; }
+}

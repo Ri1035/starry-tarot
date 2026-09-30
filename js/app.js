@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 const DISCLAIMER = '免责声明：塔罗仅为趣味娱乐，不构成人生、投资、重大决策建议。';
@@ -26,6 +26,8 @@ const state = {
   flippedCount: 0,       // 已翻开张数
   readingDone: false     // 是否已生成完整解读
 };
+
+let spreadFilter = 'all'; // 牌阵列表当前筛选分类
 
 /* ---------- 2. 工具函数 ---------- */
 const $ = (sel) => document.querySelector(sel);
@@ -113,7 +115,7 @@ function initStarfield() {
 }
 
 /* ---------- 4. 视图切换 / 弹窗 / Toast ---------- */
-const VIEWS = ['view-home', 'view-gallery', 'view-draw', 'view-reading'];
+const VIEWS = ['view-home', 'view-gallery', 'view-about', 'view-draw', 'view-reading'];
 
 function showView(name) {
   for (const v of VIEWS) {
@@ -137,25 +139,36 @@ function showToast(msg, ms = 2200) {
 
 /* ---------- 5. 牌阵选择与预览 ---------- */
 
-/** 渲染牌阵列表 */
-function renderSpreadList() {
+/** 渲染牌阵列表（支持按主题分类筛选） */
+function renderSpreadList(filter) {
   const list = $('#spread-list');
   list.innerHTML = '';
-  for (const spread of TAROT_SPREADS) {
+  const items = filter && filter !== 'all'
+    ? TAROT_SPREADS.filter((s) => s.category === filter)
+    : TAROT_SPREADS;
+  for (const spread of items) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'spread-item';
-    btn.innerHTML = `<span class="s-name">${spread.name}</span>
-                     <span class="s-count">${spread.count} 张</span>`;
+    btn.innerHTML =
+      `<span class="s-badge">${SPREAD_CATEGORIES[spread.category].label}</span>
+       <span class="s-name">${spread.name}</span>
+       <span class="s-count">${spread.count} 张</span>`;
     btn.addEventListener('click', () => openSpreadPreview(spread));
     list.appendChild(btn);
   }
 }
 
-/** 打开牌阵预览弹窗（含迷你布局图） */
+/** 打开牌阵预览弹窗（含迷你布局图与牌阵信息） */
 function openSpreadPreview(spread) {
   $('#preview-name').textContent = spread.name;
   $('#preview-desc').textContent = spread.desc;
+  $('#preview-meta').innerHTML =
+    `<span class="p-badge">${SPREAD_CATEGORIES[spread.category].label}</span>
+     <span class="p-count">${spread.count} 张</span>`;
+  $('#preview-info').innerHTML =
+    `<div class="p-info-item"><span class="p-info-lbl">适用场景</span><p>${spread.info.scene}</p></div>
+     <div class="p-info-item"><span class="p-info-lbl">解读要点</span><p>${spread.info.tip}</p></div>`;
   const box = $('#preview-layout');
   box.innerHTML = '';
   box.className = 'preview-layout layout-' + spread.layout;
@@ -170,16 +183,64 @@ function openSpreadPreview(spread) {
 
 /** 生成预览迷你布局 */
 function buildPreviewSlots(spread) {
-  if (spread.layout === 'row' || spread.layout === 'grid2' || spread.layout === 'hex' || spread.layout === 'year') {
+  const flexWrap = () => {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;justify-content:center;';
-    spread.positions.forEach((p) => {
-      const slot = document.createElement('div');
-      slot.className = 'preview-slot';
-      slot.innerHTML = '<div class="preview-card"></div><span class="pv-label">' + p.label + '</span>';
-      wrap.appendChild(slot);
-    });
+    spread.positions.forEach((p) => wrap.appendChild(previewSlot(p.label)));
     return wrap;
+  };
+  if (spread.layout === 'row' || spread.layout === 'grid2' || spread.layout === 'hex' || spread.layout === 'year' || spread.layout === 'zodiac') {
+    return flexWrap();
+  }
+  if (spread.layout === 'columns') {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px;';
+    let start = 0;
+    if (spread.positions.length % 2 === 1) {
+      const top = document.createElement('div');
+      top.style.cssText = 'display:flex;';
+      top.appendChild(previewSlot(spread.positions[0].label));
+      wrap.appendChild(top);
+      start = 1;
+    }
+    const cols = document.createElement('div');
+    cols.style.cssText = 'display:flex;gap:18px;';
+    const left = document.createElement('div');
+    left.style.cssText = 'display:flex;flex-direction:column;gap:12px;';
+    const right = document.createElement('div');
+    right.style.cssText = 'display:flex;flex-direction:column;gap:12px;';
+    const rest = spread.positions.length - start;
+    const half = Math.ceil(rest / 2);
+    for (let i = start; i < start + half; i++) left.appendChild(previewSlot(spread.positions[i].label));
+    for (let i = start + half; i < spread.positions.length; i++) right.appendChild(previewSlot(spread.positions[i].label));
+    cols.appendChild(left);
+    cols.appendChild(right);
+    wrap.appendChild(cols);
+    return wrap;
+  }
+  if (spread.layout === 'pyramid') {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px;';
+    let idx = 0;
+    let level = 1;
+    while (idx < spread.positions.length) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:12px;';
+      for (let k = 0; k < level && idx < spread.positions.length; k++, idx++) {
+        row.appendChild(previewSlot(spread.positions[idx].label));
+      }
+      wrap.appendChild(row);
+      level++;
+    }
+    return wrap;
+  }
+  if (spread.layout === 'cross5') {
+    return previewAreaGrid(spread, { center: 0, right: 1, left: 2, bottom: 3, top: 4 },
+      "'. top .' 'left center right' '. bottom .'");
+  }
+  if (spread.layout === 'horseshoe') {
+    return previewAreaGrid(spread, { a: 0, b: 1, c: 2, d: 3, e: 4, f: 5, g: 6 },
+      "'a . g' 'b . f' 'c d e'");
   }
   if (spread.layout === 'triangle') {
     const wrap = document.createElement('div');
@@ -227,6 +288,19 @@ function buildPreviewSlots(spread) {
   }
   // single
   return previewSlot(spread.positions[0].label);
+}
+
+/** 用 grid-template-areas 生成预览（十字 / 马蹄铁等） */
+function previewAreaGrid(spread, areaMap, template) {
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;gap:12px;justify-items:center;align-items:center;';
+  grid.style.gridTemplateAreas = template;
+  for (const key in areaMap) {
+    const slot = previewSlot(spread.positions[areaMap[key]].label);
+    slot.style.gridArea = key;
+    grid.appendChild(slot);
+  }
+  return grid;
 }
 
 function previewSlot(label) {
@@ -354,21 +428,27 @@ function renderDrawLayout() {
   container.appendChild(buildCardsDom(spread, state.draw, true));
 }
 
-/** 构建卡牌 DOM。faceDown=true 时展示背面；否则展示正/逆位牌面 */
-function buildCardsDom(spread, draw, faceDown) {
-  if (spread.layout === 'row') {
+/** 布局注册表：每种布局对应一个渲染函数（数据驱动，新增布局只需在此登记） */
+const LAYOUTS = {
+  single(spread, draw, faceDown) {
+    const wrap = document.createElement('div');
+    wrap.className = 'layout-single';
+    wrap.appendChild(makeSlot(spread, draw[0], 0, faceDown));
+    return wrap;
+  },
+  row(spread, draw, faceDown) {
     const wrap = document.createElement('div');
     wrap.className = 'layout-row';
     draw.forEach((d, i) => wrap.appendChild(makeSlot(spread, d, i, faceDown)));
     return wrap;
-  }
-  if (spread.layout === 'grid2') {
+  },
+  grid2(spread, draw, faceDown) {
     const wrap = document.createElement('div');
     wrap.className = 'layout-grid2';
     draw.forEach((d, i) => wrap.appendChild(makeSlot(spread, d, i, faceDown)));
     return wrap;
-  }
-  if (spread.layout === 'triangle') {
+  },
+  triangle(spread, draw, faceDown) {
     const wrap = document.createElement('div');
     wrap.className = 'layout-triangle';
     const r1 = document.createElement('div');
@@ -381,27 +461,116 @@ function buildCardsDom(spread, draw, faceDown) {
     wrap.appendChild(r1);
     wrap.appendChild(r2);
     return wrap;
-  }
-  if (spread.layout === 'hex') {
+  },
+  hex(spread, draw, faceDown) {
     const wrap = document.createElement('div');
     wrap.className = 'layout-hex';
     draw.forEach((d, i) => wrap.appendChild(makeSlot(spread, d, i, faceDown)));
     return wrap;
-  }
-  if (spread.layout === 'year') {
+  },
+  year(spread, draw, faceDown) {
     const wrap = document.createElement('div');
     wrap.className = 'layout-year';
     draw.forEach((d, i) => wrap.appendChild(makeSlot(spread, d, i, faceDown)));
     return wrap;
-  }
-  if (spread.layout === 'celtic') {
+  },
+  celtic(spread, draw, faceDown) {
     return buildCeltic(spread, draw, faceDown);
+  },
+  /* ---- v1.2.0 新增布局 ---- */
+  columns(spread, draw, faceDown) {
+    const wrap = document.createElement('div');
+    wrap.className = 'layout-columns';
+    const cols = document.createElement('div');
+    cols.className = 'cols';
+    const left = document.createElement('div');
+    left.className = 'col';
+    const right = document.createElement('div');
+    right.className = 'col';
+    let start = 0;
+    if (draw.length % 2 === 1) {
+      // 奇数张：首张居中置顶（如二选一的"真实需求"）
+      const top = document.createElement('div');
+      top.className = 'row';
+      top.appendChild(makeSlot(spread, draw[0], 0, faceDown));
+      wrap.appendChild(top);
+      start = 1;
+    }
+    const rest = draw.length - start;
+    const half = Math.ceil(rest / 2);
+    for (let i = start; i < start + half; i++) left.appendChild(makeSlot(spread, draw[i], i, faceDown));
+    for (let i = start + half; i < draw.length; i++) right.appendChild(makeSlot(spread, draw[i], i, faceDown));
+    cols.appendChild(left);
+    cols.appendChild(right);
+    wrap.appendChild(cols);
+    return wrap;
+  },
+  pyramid(spread, draw, faceDown) {
+    // 逐层堆叠：1-2-1 / 1-2-3-1 等，自适应张数
+    const wrap = document.createElement('div');
+    wrap.className = 'layout-pyramid';
+    let idx = 0;
+    let level = 1;
+    while (idx < draw.length) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      for (let k = 0; k < level && idx < draw.length; k++, idx++) {
+        row.appendChild(makeSlot(spread, draw[idx], idx, faceDown));
+      }
+      wrap.appendChild(row);
+      level++;
+    }
+    return wrap;
+  },
+  cross5(spread, draw, faceDown) {
+    // 十字形：中心 + 上 / 右 / 左 / 下
+    const areas = { 0: 'center', 1: 'right', 2: 'left', 3: 'bottom', 4: 'top' };
+    const grid = document.createElement('div');
+    grid.className = 'cross5-grid';
+    for (let i = 0; i < draw.length; i++) {
+      const slot = makeSlot(spread, draw[i], i, faceDown);
+      slot.classList.add('area-' + areas[i]);
+      grid.appendChild(slot);
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'layout-cross5';
+    wrap.appendChild(grid);
+    return wrap;
+  },
+  horseshoe(spread, draw, faceDown) {
+    // 马蹄铁：U 形（左列向下 → 底部 → 右列向上）
+    const areas = { 0: 'a', 1: 'b', 2: 'c', 3: 'd', 4: 'e', 5: 'f', 6: 'g' };
+    const grid = document.createElement('div');
+    grid.className = 'horseshoe-grid';
+    for (let i = 0; i < draw.length; i++) {
+      const slot = makeSlot(spread, draw[i], i, faceDown);
+      slot.classList.add('area-' + areas[i]);
+      grid.appendChild(slot);
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'layout-horseshoe';
+    wrap.appendChild(grid);
+    return wrap;
+  },
+  zodiac(spread, draw, faceDown) {
+    const wrap = document.createElement('div');
+    wrap.className = 'layout-zodiac';
+    draw.forEach((d, i) => wrap.appendChild(makeSlot(spread, d, i, faceDown)));
+    return wrap;
   }
-  // single：单张居中
-  const wrap = document.createElement('div');
-  wrap.className = 'layout-single';
-  wrap.appendChild(makeSlot(spread, draw[0], 0, faceDown));
-  return wrap;
+};
+
+/** 构建卡牌 DOM。faceDown=true 时展示背面；否则展示正/逆位牌面 */
+function buildCardsDom(spread, draw, faceDown) {
+  const render = LAYOUTS[spread.layout];
+  if (!render) {
+    // 未知布局回退为单行
+    const wrap = document.createElement('div');
+    wrap.className = 'layout-row';
+    draw.forEach((d, i) => wrap.appendChild(makeSlot(spread, d, i, faceDown)));
+    return wrap;
+  }
+  return render(spread, draw, faceDown);
 }
 
 /** 凯尔特十字：十字（前 6 张）+ 柱列（后 4 张） */
@@ -516,11 +685,9 @@ function flipCard(cardEl) {
   const fresh = makeSlot(state.spread, d, index, false);
   const newCard = fresh.querySelector('.tarot-card');
   newCard.dataset.drawIndex = index;
-  // 保留原卡位的倾斜角度与凯尔特十字的网格区类名
+  // 保留原卡位的倾斜角度与网格区类名（slot-* / area-* 等）
   newCard.style.setProperty('--tilt', cardEl.style.getPropertyValue('--tilt'));
-  for (const cls of slot.classList) {
-    if (cls.startsWith('slot-')) fresh.classList.add(cls);
-  }
+  for (const cls of slot.classList) fresh.classList.add(cls);
   newCard.classList.remove('flipped');
   slot.parentNode.replaceChild(fresh, slot);
 
@@ -761,19 +928,34 @@ function buildDetailText(rec) {
 /* ---------- 9. 事件绑定与启动 ---------- */
 function initEvents() {
   // 首页按钮
-  $('#btn-open-spreads').addEventListener('click', () => { renderSpreadList(); openModal('modal-spreads'); });
+  $('#btn-open-spreads').addEventListener('click', () => { renderSpreadList(spreadFilter); openModal('modal-spreads'); });
   $('#btn-quick-draw').addEventListener('click', () => startDraw(getSpread('single')));
   $('#btn-gallery').addEventListener('click', () => showView('gallery'));
+  $('#btn-about').addEventListener('click', () => showView('about'));
   $('#btn-history').addEventListener('click', () => { renderHistory(); openModal('modal-history'); });
 
   // 导航
   $$('[data-nav]').forEach((el) => {
     el.addEventListener('click', () => {
       const target = el.dataset.nav;
-      if (target === 'spreads') { renderSpreadList(); openModal('modal-spreads'); }
+      if (target === 'spreads') { renderSpreadList(spreadFilter); openModal('modal-spreads'); }
       else if (target === 'history') { renderHistory(); openModal('modal-history'); }
       else if (target === 'gallery') { showView('gallery'); }
+      else if (target === 'about') { showView('about'); }
       else if (target === 'home') { showView('home'); }
+    });
+  });
+
+  // 牌阵分类筛选
+  $$('#spread-filters .filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      spreadFilter = chip.dataset.filter;
+      $$('#spread-filters .filter-chip').forEach((c) => {
+        const active = c === chip;
+        c.classList.toggle('active', active);
+        c.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      renderSpreadList(spreadFilter);
     });
   });
 
@@ -813,8 +995,9 @@ function initEvents() {
   // 历史操作
   $('#btn-history-clear').addEventListener('click', clearReadings);
 
-  // 页脚版本
+  // 页脚版本与页头徽标
   $('#footer-version').textContent = `星穹塔罗 v${APP_VERSION} · 纯前端 · 卡图素材来自公版 Rider-Waite（1909）`;
+  $('#version-badge').textContent = `v${APP_VERSION}`;
 }
 
 function init() {

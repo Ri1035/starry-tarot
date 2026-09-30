@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="星穹塔罗 —— 纯前端塔罗占卜互动网页，支持多牌阵、洗牌与翻牌动画、正逆位解读、一键复制。" />
   <title>星穹塔罗 · Starry Tarot</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='42' fill='%23110827'/%3E%3Cpath d='M50 22a28 28 0 1 0 0 56 23 23 0 0 1 0-46 28 28 0 0 0 0-10z' fill='%23e8c56b'/%3E%3C/svg%3E" />
+  <link rel="icon" type="image/png" href="assets/icon/favicon.png" />
+  <link rel="apple-touch-icon" href="assets/icon/apple-touch-icon.png" />
   <!-- 字体：拉丁标题用 Cinzel，中文用 Noto Serif SC（加载失败时回退系统衬线，不影响功能） -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css?v=1.2.0" />
 </head>
 <body>
   <!-- 背景层：星空粒子画布 + 星云光晕（纯 CSS 动画） -->
@@ -22,11 +23,15 @@
       <span class="brand-mark">☾</span>
       <span class="brand-text">星穹塔罗</span>
     </a>
-    <nav class="site-nav" aria-label="主导航">
-      <button class="nav-link" data-nav="spreads">牌阵</button>
-      <button class="nav-link" data-nav="gallery">画廊</button>
-      <button class="nav-link" data-nav="history">历史</button>
-    </nav>
+    <div class="header-right">
+      <span id="version-badge" class="version-badge" title="当前版本">v1.2.0</span>
+      <nav class="site-nav" aria-label="主导航">
+        <button class="nav-link" data-nav="spreads">牌阵</button>
+        <button class="nav-link" data-nav="gallery">画廊</button>
+        <button class="nav-link" data-nav="about">关于</button>
+        <button class="nav-link" data-nav="history">历史</button>
+      </nav>
+    </div>
   </header>
 
   <main id="app">
@@ -49,6 +54,7 @@
         <button id="btn-open-spreads" class="btn btn-primary" type="button">☾　选择牌阵</button>
         <button id="btn-quick-draw" class="btn btn-ghost" type="button">✦　单卡速抽</button>
         <button id="btn-gallery" class="btn btn-ghost" type="button">✧　塔罗画廊</button>
+        <button id="btn-about" class="btn btn-ghost" type="button">❀　关于我</button>
         <button id="btn-history" class="btn btn-ghost" type="button">❖　历史记录</button>
       </div>
     </section>
@@ -73,7 +79,26 @@
       </div>
     </section>
 
-    <!-- ============ 视图三：抽牌 ============ -->
+    <!-- ============ 视图三：关于我（个人主页） ============ -->
+    <section id="view-about" class="view view-about hidden">
+      <div class="about-card">
+        <div class="about-avatar-wrap">
+          <img class="about-avatar" src="assets/icon/avatar.png" alt="猫咪魔法师头像" />
+          <span class="about-avatar-ring" aria-hidden="true"></span>
+        </div>
+        <h2 class="about-name">1035</h2>
+        <p class="about-role">星穹塔罗 · 主理人</p>
+        <p class="about-bio">在星辰的低语里，我为你翻开 78 张牌。<br />愿每一张卡面，都能照见你心里那个答案。</p>
+        <div class="about-contact">
+          <span class="about-email">koka2996978242@outlook.com</span>
+          <a class="btn btn-ghost" href="mailto:koka2996978242@outlook.com">✉　发邮件给我</a>
+        </div>
+        <p class="about-note">仅此邮箱为公开联系方式</p>
+        <button class="btn btn-link" data-nav="home" type="button">← 返回首页</button>
+      </div>
+    </section>
+
+    <!-- ============ 视图四：抽牌 ============ -->
     <section id="view-draw" class="view view-draw hidden">
       <div class="draw-header">
         <h2 id="draw-title" class="section-title"></h2>
@@ -87,7 +112,7 @@
       </div>
     </section>
 
-    <!-- ============ 视图四：解读结果 ============ -->
+    <!-- ============ 视图五：解读结果 ============ -->
     <section id="view-reading" class="view view-reading hidden">
       <div class="reading-header">
         <h2 id="reading-title" class="section-title"></h2>
@@ -113,6 +138,14 @@
     <div class="modal-panel">
       <button class="modal-close" data-close="modal-spreads" aria-label="关闭">✕</button>
       <h3 class="modal-title">选择牌阵</h3>
+      <div id="spread-filters" class="spread-filters" role="tablist" aria-label="按主题筛选牌阵">
+        <button class="filter-chip active" data-filter="all" role="tab" aria-selected="true">全部</button>
+        <button class="filter-chip" data-filter="love" role="tab" aria-selected="false">爱情</button>
+        <button class="filter-chip" data-filter="career" role="tab" aria-selected="false">事业</button>
+        <button class="filter-chip" data-filter="growth" role="tab" aria-selected="false">成长</button>
+        <button class="filter-chip" data-filter="time" role="tab" aria-selected="false">时间</button>
+        <button class="filter-chip" data-filter="life" role="tab" aria-selected="false">综合</button>
+      </div>
       <div id="spread-list" class="spread-list"></div>
     </div>
   </div>
@@ -123,7 +156,9 @@
       <button class="modal-close" data-close="modal-preview" aria-label="关闭">✕</button>
       <h3 id="preview-name" class="modal-title"></h3>
       <p id="preview-desc" class="modal-desc"></p>
+      <div id="preview-meta" class="preview-meta"></div>
       <div id="preview-layout" class="preview-layout"></div>
+      <div id="preview-info" class="preview-info"></div>
       <button id="btn-start-draw" class="btn btn-primary btn-block" type="button">✦　开始占卜</button>
     </div>
   </div>
@@ -160,8 +195,8 @@
   <!-- 轻提示 -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="js/data/cards.js"></script>
-  <script src="js/data/spreads.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/data/cards.js?v=1.2.0"></script>
+  <script src="js/data/spreads.js?v=1.2.0"></script>
+  <script src="js/app.js?v=1.2.0"></script>
 </body>
 </html>
