@@ -1,5 +1,15 @@
 # 星穹塔罗 · 版本记录
 
+## v1.3.2 · 3D 修复与首页精简
+- 修复 3D 牌桌白屏：R2 上 OrbitControls 存放在 `three/r160/OrbitControls.js`，而 importmap 前缀
+  `three/addons/` 请求的是 `three/r160/controls/OrbitControls.js` → 404，导致 3D 模块加载失败、
+  `window.Tarot3D` 为空、进入 3D 视图无任何内容。已将文件移至标准 addons 路径
+  `three/r160/controls/OrbitControls.js`（删除根目录冗余副本），模块恢复正常加载
+- 首页精简：移除「塔罗画廊 / 关于我 / 历史记录」三个按钮（顶部导航已有对应入口，避免重复 UI），
+  首页仅保留「选择牌阵 / 单卡速抽 / 3D 牌桌」
+- 3D 牌桌本地回归（软件 WebGL）：场景渲染（金色圆桌/星空粒子）、恋人金字塔 4 张落牌、
+  点击翻牌、全部翻开、自动生成解读全流程通过，无 JS 报错
+
 ## v1.3.1 · 加载性能优化
 - 资源自托管：字体（Cinzel / Noto Serif SC 全部字重与子集）与 Three.js（0.160 核心 + OrbitControls）从 Google Fonts / jsdelivr 迁移至自建 R2 对象存储
 - R2 目录规范：`three/r160/`（Three.js ESM）、`fonts/`（按字体/字重/子集分目录），r2.dev 公网域名提供 HTTPS 直链

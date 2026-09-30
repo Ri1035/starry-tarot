@@ -2,6 +2,34 @@
 
 > 本文件用于记录每轮开发的关键决策、进度与待办，防止上下文丢失。
 
+## 2026-09-30 · v1.3.2 3D 修复与首页精简
+
+### 任务
+用户反馈两点：① 首页不需要重复显示「画廊 / 关于我 / 历史记录」按钮（顶部导航已有入口）；
+② 3D 牌桌卡死、没有任何内容。
+
+### 排查结论（3D 白屏根因）
+- R2 上 Three.js addons 只有 `three/r160/OrbitControls.js`（根目录），而 index.html 的 importmap
+  前缀 `three/addons/` → `three/r160/`，模块实际请求 `three/r160/controls/OrbitControls.js` → 404。
+- `table3d.js` 因 import 404 整个模块加载失败 → `window.Tarot3D` 从未定义 → 进入 3D 视图时
+  mount 永远无法执行，表现为"卡死 / 没有任何东西出"。
+- 浏览器子代理环境无 WebGL，触发了降级提示，反而证明模块已加载（mount 已进入降级分支）。
+
+### 修复与验证
+- [x] R2：将 OrbitControls.js 上传至标准 addons 路径 `three/r160/controls/OrbitControls.js`，
+      删除根目录冗余副本（资源 token 操作），curl 验证 200。
+- [x] 首页：index.html 移除 btn-gallery / btn-about / btn-history 三个按钮；
+      app.js 同步移除对应事件绑定（避免 null 引用中断 initEvents）。
+- [x] 本地回归（puppeteer + 软件 WebGL）：webglAvailable=true、window.Tarot3D=true、
+      场景渲染（金色圆桌/星空粒子）、恋人金字塔 4 张落牌、全部翻开、自动出解读，
+      0 个 JS 错误；首页 hero-actions 仅剩 3 个按钮。
+- [x] 版本升至 v1.3.2（index.html 全部 ?v=、徽标、app.js APP_VERSION）
+- [x] 提交 + 暂存目录部署（排除 docs/.uploads/.wrangler/.git）+ 线上验证
+
+### 技术备忘
+- importmap 前缀映射（如 `three/addons/`）拼接的是"标准目录结构"路径，上传 R2 时必须保持
+  three.js 官方 `examples/jsm/` 的目录层级（`controls/OrbitControls.js`），不能平铺放根目录。
+
 ## 2026-09-30 · v1.3.1 加载性能优化（资源迁 R2）
 
 ### 任务

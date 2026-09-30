@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.3.1';
+const APP_VERSION = '1.3.2';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 const DISCLAIMER = '免责声明：塔罗仅为趣味娱乐，不构成人生、投资、重大决策建议。';
@@ -959,13 +959,10 @@ function buildDetailText(rec) {
 
 /* ---------- 9. 事件绑定与启动 ---------- */
 function initEvents() {
-  // 首页按钮
+  // 首页按钮（画廊/关于/历史已有顶部导航入口，首页不重复放置）
   $('#btn-open-spreads').addEventListener('click', () => { renderSpreadList(spreadFilter); openModal('modal-spreads'); });
   $('#btn-quick-draw').addEventListener('click', () => startDraw(getSpread('single')));
-  $('#btn-gallery').addEventListener('click', () => showView('gallery'));
   $('#btn-3d').addEventListener('click', () => showView('3d'));
-  $('#btn-about').addEventListener('click', () => showView('about'));
-  $('#btn-history').addEventListener('click', () => { renderHistory(); openModal('modal-history'); });
 
   // 导航
   $$('[data-nav]').forEach((el) => {
