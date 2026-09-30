@@ -1,2 +1,8 @@
+# 排除清单说明：
+# - wrangler 4.x 的 `pages deploy` 直传不读取本文件（仅 Workers assets 的 wrangler deploy 生效）。
+# - Pages 部署的排除用「构建暂存目录」实现：rsync --exclude 生成 /tmp/pages-build 后再部署，
+#   见 docs/DEV_LOG.md v1.3.1。保留本文件仅为 Workers assets 场景与文档参考。
 # 排除：用户上传的临时文件（只读，不入站点）
 .uploads/
+# 排除：内部开发日志（含账号 ID 等内部信息，不发布）
+docs/

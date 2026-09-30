@@ -5,6 +5,7 @@
 - R2 目录规范：`three/r160/`（Three.js ESM）、`fonts/`（按字体/字重/子集分目录），r2.dev 公网域名提供 HTTPS 直链
 - 缓存策略：静态资源带 `?v=1.3.1` 版本参数，R2 对象 `Cache-Control: public, max-age=31536000, immutable`
 - 移除对 Google Fonts / jsdelivr 的外部依赖，规避境外 CDN 在国内加载慢/不稳的问题
+- 已部署：Cloudflare Pages `starry-tarot`（production 76fcfff6），GitHub tag v1.3.1
 
 ## v1.3.0 · 3D 占卜牌桌
 - 新增 3D 占卜牌桌视图（Three.js CDN ESM + importmap），保留 2D 全部功能

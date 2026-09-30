@@ -30,7 +30,20 @@
 - [x] index.html：字体链接换 css/fonts.css，importmap 指向 R2，全部资源 ?v=1.3.1，版本徽标 v1.3.1
 - [x] app.js：APP_VERSION → 1.3.1
 - [x] 线上验证（curl 直链 + 浏览器回归）
-- [ ] 提交 v1.3.1 并部署（部署 token）
+- [x] 提交 v1.3.1（commit 70ebb2a / tag v1.3.1 已推送 GitHub Ri1035/starry-tarot）
+- [x] 部署（部署 token `cfat_oXXX…e4` 验证有效：/accounts 正常、/user/tokens/verify 报错属
+  权限正常现象）→ wrangler pages deploy（暂存目录排除 docs/.uploads），production 76fcfff6
+
+### 部署记录（地址不写入公开文件，按用户要求仅保留邮箱公开）
+- 2026-09-30 v1.3.1 已通过 wrangler direct upload 部署至 Cloudflare Pages
+  `starry-tarot` 项目（production branch: main），正式 production：76fcfff6。
+  线上验证：index.html 引用 `css/fonts.css?v=1.3.1`，importmap 指向 R2
+  `pub-57bea9…r2.dev/three/r160/`，R2 直链 three.module.js（1.27MB）与字体 woff2 均 200。
+- 隐私修正：早期部署把 `docs/DEV_LOG.md` 与 `.uploads/`（用户原图）传上了站点。
+  排查确认 wrangler 4.x `pages deploy` 不读取 `.assetsignore`（仅 Workers assets 生效），
+  故改为「构建暂存目录」排除：rsync --exclude docs/.uploads/.wrangler/.git 到 /tmp/pages-build
+  再部署。验证新 production 上 `/docs/DEV_LOG.md` 与 `.uploads/*` 均返回 index.html
+  SPA 回退（11782B，与不存在路径一致），敏感内容已从线上移除。
 
 ### 技术备忘
 - R2 REST 无对象上传接口，对象写入走 wrangler r2 object put（Bearer token）或 S3 API（需 32 位 AccessKey）。
