@@ -2,6 +2,41 @@
 
 > 本文件用于记录每轮开发的关键决策、进度与待办，防止上下文丢失。
 
+## 2026-09-30 · v1.3.1 加载性能优化（资源迁 R2）
+
+### 任务
+用户反馈加载慢，要求将模型等资源放入「资源账号」的 R2，建好目录并命名规范；该 token 只放资源、不用于部署。
+
+### Token 验证结论（用户提供的两个 token 都正确）
+- 部署 token `cfat_oXXX…e4`：Cloudflare Pages 账号 f1b789…，可列出/管理 Pages 项目，用于 Pages 部署。
+- 资源 token `cfat_Hqc…585`：受限 API token（无 user 级权限，`/user/tokens/verify` 会报错属正常），
+  其账号 `07d2274c8922a9bbaecfb3d7d7753651`（Ri1OE5），`/accounts` 与 R2 接口均正常 → 只用于 R2 资源上传。
+- 注意：Cloudflare API token 不能直接当 S3 的 AccessKey 用（长度 53 ≠ 32），S3 上传需走 R2 REST/wrangler。
+
+### 决策记录
+- 慢源：Google Fonts（Cinzel + Noto Serif SC）与 jsdelivr Three.js 在国内加载慢/不稳。
+- 方案：全部自托管到 R2 `starry-tarot-assets` bucket（资源账号），r2.dev 公网域名直链，
+  对象带 `Cache-Control: public, max-age=31536000, immutable`，页面侧资源加 `?v=1.3.1` 版本参数。
+- 目录规范：`three/r160/three.module.js`、`three/r160/OrbitControls.js`；`fonts/<family>/<weight>/<n>.woff2`。
+- 字体本地化：Python 解析 Google CSS2（Chrome UA 取 woff2），309 个 woff2 子集 + 生成 `css/fonts.css`
+  （@font-face 指向 R2），页面移除 Google Fonts 引用。
+- importmap：`three` 与 `three/addons/` 指向 R2。
+
+### 实施步骤
+- [x] 验证两 token（见上）
+- [x] 启用 bucket r2.dev 公网访问（PUT domains/managed，域名 `pub-57bea9a8f47f44be95eae1e1f5faadf5.r2.dev`）
+- [x] 下载 Three.js 0.160 两个文件、字体 309 个 woff2 到 /tmp（不落工作区）
+- [x] wrangler r2 object put 上传（三.js + 字体），content-type / cache-control 均正确
+- [x] index.html：字体链接换 css/fonts.css，importmap 指向 R2，全部资源 ?v=1.3.1，版本徽标 v1.3.1
+- [x] app.js：APP_VERSION → 1.3.1
+- [x] 线上验证（curl 直链 + 浏览器回归）
+- [ ] 提交 v1.3.1 并部署（部署 token）
+
+### 技术备忘
+- R2 REST 无对象上传接口，对象写入走 wrangler r2 object put（Bearer token）或 S3 API（需 32 位 AccessKey）。
+- r2.dev 启用接口：`PUT /accounts/{account_id}/r2/buckets/{bucket}/domains/managed`，body `{"enabled":true}`。
+- 字体 @font-face 家族名保持 `Cinzel` / `Noto Serif SC` 不变，CSS 变量无需改动。
+
 ## 2026-09-30 · v1.3.0 实施（3D 占卜牌桌）
 
 ### 任务

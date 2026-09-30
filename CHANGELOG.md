@@ -1,5 +1,11 @@
 # 星穹塔罗 · 版本记录
 
+## v1.3.1 · 加载性能优化
+- 资源自托管：字体（Cinzel / Noto Serif SC 全部字重与子集）与 Three.js（0.160 核心 + OrbitControls）从 Google Fonts / jsdelivr 迁移至自建 R2 对象存储
+- R2 目录规范：`three/r160/`（Three.js ESM）、`fonts/`（按字体/字重/子集分目录），r2.dev 公网域名提供 HTTPS 直链
+- 缓存策略：静态资源带 `?v=1.3.1` 版本参数，R2 对象 `Cache-Control: public, max-age=31536000, immutable`
+- 移除对 Google Fonts / jsdelivr 的外部依赖，规避境外 CDN 在国内加载慢/不稳的问题
+
 ## v1.3.0 · 3D 占卜牌桌
 - 新增 3D 占卜牌桌视图（Three.js CDN ESM + importmap），保留 2D 全部功能
 - 3D 场景：星空粒子、金色圆桌、卡牌飞牌/翻牌/悬停动画、OrbitControls 拖拽旋转缩放

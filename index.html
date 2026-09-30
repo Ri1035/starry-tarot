@@ -7,17 +7,15 @@
   <title>星穹塔罗 · Starry Tarot</title>
   <link rel="icon" type="image/png" href="assets/icon/favicon.png" />
   <link rel="apple-touch-icon" href="assets/icon/apple-touch-icon.png" />
-  <!-- 字体：拉丁标题用 Cinzel，中文用 Noto Serif SC（加载失败时回退系统衬线，不影响功能） -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css?v=1.3.0" />
-  <!-- Three.js CDN ESM（importmap 必须声明在任何使用它的模块之前） -->
+  <!-- 字体：自托管（R2）→ 拉丁标题 Cinzel，中文 Noto Serif SC；失败时回退系统衬线 -->
+  <link rel="stylesheet" href="css/fonts.css?v=1.3.1" />
+  <link rel="stylesheet" href="css/style.css?v=1.3.1" />
+  <!-- Three.js ESM 自托管于 R2（importmap 必须声明在任何使用它的模块之前） -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three": "https://pub-57bea9a8f47f44be95eae1e1f5faadf5.r2.dev/three/r160/three.module.js",
+      "three/addons/": "https://pub-57bea9a8f47f44be95eae1e1f5faadf5.r2.dev/three/r160/"
     }
   }
   </script>
@@ -33,7 +31,7 @@
       <span class="brand-text">星穹塔罗</span>
     </a>
     <div class="header-right">
-      <span id="version-badge" class="version-badge" title="当前版本">v1.3.0</span>
+      <span id="version-badge" class="version-badge" title="当前版本">v1.3.1</span>
       <nav class="site-nav" aria-label="主导航">
         <button class="nav-link" data-nav="spreads">牌阵</button>
         <button class="nav-link" data-nav="3d">3D牌桌</button>
@@ -219,9 +217,9 @@
   <!-- 轻提示 -->
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="js/data/cards.js?v=1.3.0"></script>
-  <script src="js/data/spreads.js?v=1.3.0"></script>
-  <script src="js/app.js?v=1.3.0"></script>
-  <script type="module" src="js/3d/table3d.js?v=1.3.0"></script>
+  <script src="js/data/cards.js?v=1.3.1"></script>
+  <script src="js/data/spreads.js?v=1.3.1"></script>
+  <script src="js/app.js?v=1.3.1"></script>
+  <script type="module" src="js/3d/table3d.js?v=1.3.1"></script>
 </body>
 </html>
