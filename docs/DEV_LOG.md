@@ -32,6 +32,13 @@
   类名，翻牌后布局错位。已改为复制原卡位全部类名。
 - 静态资源（css/js）加 `?v=` 版本参数，避免线上用户拿到旧版缓存。
 
+### 部署记录（地址不写入公开文件，按用户要求仅保留邮箱公开）
+- 2026-09-30 v1.2.0 已通过 wrangler direct upload 部署至 Cloudflare Pages
+  `starry-tarot` 项目（production branch: main），线上验证：版本徽标 v1.2.0、
+  新图标、app.js 版本号均确认生效。
+- 新增 `.assetsignore`，部署时排除 `.uploads/`（用户上传原图，不发布）。
+- Git: commit 6806e6b，tag v1.2.0 已推送 GitHub（Ri1035/starry-tarot）。
+
 ### 技术备忘
 - 布局系统：将 `buildCardsDom` 的分支逻辑改为「布局注册表 LAYOUTS」数据驱动；
   每个布局提供渲染函数与 CSS 类，卡位可带 `area` 提示。
