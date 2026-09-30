@@ -2,6 +2,51 @@
 
 > 本文件用于记录每轮开发的关键决策、进度与待办，防止上下文丢失。
 
+## 2026-10-01 · v1.3.3 左右翻牌 / 固定视角 / 魔幻符文
+
+### 任务
+用户反馈三点：① 交互奇怪（洗牌应默认自动，改为「重新占卜」按钮）；② 3D 牌桌太简陋、有 bug，
+不需要拖拽旋转与滚轮缩放（固定视角即可），并增加魔幻符号；③ 翻牌方向必须是**左右翻**，不是上下翻。
+另要求注明「魔力源来自互联网，虔诚即可得到回应」与「开发者不受任何反噬与诅咒（放个人主页）」，
+并做注释检查、bug 修复、版本管理与日志记录。
+
+### 资源调研（优先复用开源）
+- 曾评估：用 Google Fonts 开源字体 Noto Sans Runic（OFL）渲染如尼符文。实际实施时改用了
+  **矢量路径**方案（`RUNE_PATHS` + Canvas `drawRune()`），字形可控、无需字体文件、也不受字体加载失败影响。
+  评估阶段上传到 R2 的 `fonts/noto-sans-runic/400.woff2` 已确认无引用并**删除**，避免冗余资源。
+- 粒子/发光：参考 three.js 官方 examples（MIT）的加法混合（AdditiveBlending）+ `depthWrite:false` 模式。
+- 结论：符号全部**程序化生成**，不新增任何网络请求，也就不存在新的加载慢/失效风险。
+
+### 关键实现决策
+- **左右翻**：卡牌外层 `group` 已 `rotation.x = -90°` 放平；在此坐标系下 `flipper.rotation.y`
+  映射到世界纵深轴（Z），绕它旋转即"左右掀开"。若改 `group.rotation.x` 则是上下翻（与塔罗习惯不符）。
+  翻牌动画同时做 `sin(t·π) × flipLift` 抬升，避免与原桌面穿插。
+- **固定视角**：`createCamera()` 直接设 `position(0, 8.6, 9.4)` + `lookAt(0, 0, 0.2)`，
+  删除 `createControls()` 与全部指针旋转/滚轮处理，index.html 的 `three/addons/` importmap 映射一并删除。
+- **「全部翻开」事件驱动**（本轮最重要的 bug 修复，见下）。
+
+### Bug 修复
+- **[真 bug] 「全部翻开」点了没反应**：卡牌只有在落牌动画 `finalizeAnim` 里才 `dealt = true`；
+  而按钮原先由 `setTimeout(620 + n×115ms)` 固定延时显示。慢设备/低帧率下按钮先于落牌出现，
+  此时 `flipAllCards()` 会跳过所有未落位的牌 → 毫无反应。
+  修复：`table3d` 在全部卡牌落位后派发 `tarot:alldealt`，`app.js` 收到事件再显示按钮，时序完全由真实动画驱动。
+- **[真 bug] 悬停浮起残留**：旧实现只更新当前悬停牌的 `hoverY`，鼠标移开后可能永久悬空；
+  改为每帧遍历全部卡牌统一缓动趋近目标高度。
+- **逆位未倒置**：CSS `.tarot-card-front .is-reversed img` 与 DOM 不符（类名在 `<img>` 上）→
+  改为 `.tarot-card-front img.is-reversed`。
+- **`clearCards` 调用了不存在的 `frontMeshDispose`**：改为 card 上保留 `frontMesh` 引用并释放其独占材质。
+- **`.draw-actions` / `.draw-hint` 样式缺失**：导致抽牌区按钮左对齐、无间距，补齐 flex 布局样式。
+
+### 验证
+- [x] 语法检查（`node --check`）app.js / table3d.js 通过
+- [x] puppeteer + 软件 WebGL（SwiftShader）本地回归，全流程断言通过、0 控制台错误
+- [x] 3D 截图人工确认：魔法阵 + 光晕 + 8 个悬浮卢恩符文渲染正常、视角固定、卡牌左右翻
+
+### 测试环境的坑（避免重复踩）
+- headless 下软件渲染帧率极低，且 `loop()` 中 `dt = min(getDelta(), 0.05)` 会限幅，
+  动画按帧推进 → **必须用条件轮询 `waitFor`，不能用固定 sleep 判定动画是否完成**。
+- 模态开合有过渡，按坐标 `page.click` 命中率不稳定 → 改为 `element.click()` + 按状态重试。
+
 ## 2026-09-30 · v1.3.2 3D 修复与首页精简
 
 ### 任务

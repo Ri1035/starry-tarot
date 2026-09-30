@@ -14,10 +14,12 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.3.2';
+const APP_VERSION = '1.3.3';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
-const DISCLAIMER = '免责声明：塔罗仅为趣味娱乐，不构成人生、投资、重大决策建议。';
+// 魔力源声明：按用户要求注明「魔力来自互联网」，并声明开发者不受反噬与诅咒
+const MAGIC_NOTE = '✦ 本站魔力源来自互联网的星辰之力，虔诚即可得到回应 ✦';
+const DISCLAIMER = '免责声明：塔罗仅为趣味娱乐，不构成人生、投资、重大决策建议。本站魔力不与开发者及合作者联通，开发者不受任何反噬与诅咒。';
 
 const state = {
   spread: null,          // 当前牌阵对象
@@ -120,14 +122,19 @@ const VIEWS = ['view-home', 'view-gallery', 'view-about', 'view-draw', 'view-rea
 
 function showView(name) {
   const leaving3d = !document.getElementById('view-3d').classList.contains('hidden');
+  const leavingDraw = !document.getElementById('view-draw').classList.contains('hidden');
   for (const v of VIEWS) {
     document.getElementById(v).classList.toggle('hidden', v !== 'view-' + name);
   }
   currentView = name;
+  // 离开抽牌视图时清掉未完成的洗牌计时器，避免残留状态影响下一次占卜
+  if (leavingDraw && name !== 'draw') clearDrawTimers();
   // 离开 3D 牌桌时释放 GPU 资源
   if (leaving3d && window.Tarot3D) window.Tarot3D.unmount();
   // 进入 3D 牌桌：等布局完成后再挂载（WebGL 画布需要真实尺寸）
   if (name === '3d') {
+    // 每次进入都先收起「全部翻开」：等落牌全部就位（tarot:alldealt）才重新露出
+    $('#btn-3d-flip-all').classList.add('hidden');
     requestAnimationFrame(() => {
       if (!window.Tarot3D) {
         showToast('当前浏览器不支持 3D 牌桌，已为你切换到 2D 占卜');
@@ -419,8 +426,9 @@ function drawCards(spread) {
   }));
 }
 
-/** 开始占卜：进入抽牌视图并摆放卡牌 */
+/** 开始占卜：进入抽牌视图并摆放卡牌（默认自动洗牌，无需手动点击） */
 function startDraw(spread) {
+  clearDrawTimers();          // 重开一局：先清掉上一局可能残留的洗牌计时器
   state.spread = spread;
   state.draw = drawCards(spread);
   state.shuffled = false;
@@ -430,10 +438,11 @@ function startDraw(spread) {
   $('#draw-title').textContent = spread.name;
   $('#draw-desc').textContent = spread.desc;
   $('#btn-flip-all').classList.add('hidden');
-  $('#btn-shuffle').disabled = false;
+  $('#btn-redeal').disabled = true;   // 洗牌未完成前禁止重开
 
   renderDrawLayout();
   showView('draw');
+  autoShuffle();
 }
 
 /** 开始 3D 占卜：沿用抽牌/解读逻辑，仅把落牌交给 table3d */
@@ -444,11 +453,13 @@ function start3dReading(spread) {
   state.flippedCount = 0;
   state.readingDone = false;
 
-  $('#btn-3d-flip-all').classList.remove('hidden');
   if (window.Tarot3D) {
     window.Tarot3D.startReading(spread, state.draw);
     showToast('卡牌已落桌，点击翻牌 ✨');
   }
+  // 「全部翻开」不在此时显示：未落位的牌会被 flipAllCards 跳过，
+  // 过早露出按钮会让人"点了没反应"。改由 table3d 在全部牌落位后派发
+  // tarot:alldealt 事件、在 initEvents 中统一露出（时序完全由真实动画驱动）。
 }
 
 /** 渲染抽牌区的卡牌（背面朝上） */
@@ -691,18 +702,50 @@ function makeSlot(spread, d, index, faceDown) {
   return slot;
 }
 
-/** 洗牌动画：让所有卡牌跳动旋转约 1.4 秒后落定 */
+/* ---------- 6.1 洗牌（默认自动） ---------- */
+// 两个计时器分开管理，避免「自动洗牌延迟」与「洗牌抖动时长」互相干扰
+let autoShuffleTimer = null;   // 进入抽牌视图 → 开始洗牌的延迟
+let shuffleJumpTimer = null;   // 洗牌抖动动画时长
+
+/** 自动洗牌：稍作延迟，等卡牌落位动画（dealIn 0.5s）走完再抖动，观感更连贯 */
+function autoShuffle() {
+  clearTimeout(autoShuffleTimer);
+  autoShuffleTimer = setTimeout(doShuffle, 420);
+}
+
+/** 洗牌动画：让所有卡牌跳动旋转约 1.2 秒后落定 */
 function doShuffle() {
-  if (state.shuffled) return;
+  autoShuffleTimer = null;
+  if (state.shuffled || state.readingDone) return;
   const layout = $('#card-layout');
+  if (!layout) return;
+  const btnRedeal = $('#btn-redeal');
   layout.classList.add('shuffling');
-  $('#btn-shuffle').disabled = true;
-  setTimeout(() => {
+  if (btnRedeal) btnRedeal.disabled = true;
+  clearTimeout(shuffleJumpTimer);
+  shuffleJumpTimer = setTimeout(() => {
+    shuffleJumpTimer = null;
     layout.classList.remove('shuffling');
+    if (state.readingDone) return;      // 洗牌期间已完成解读，不再改动界面
     state.shuffled = true;
+    if (btnRedeal) btnRedeal.disabled = false;
     $('#btn-flip-all').classList.remove('hidden');
     showToast('牌已洗好，点击卡牌翻开 ✨');
-  }, 1400);
+  }, 1200);
+}
+
+/** 清理抽牌视图的洗牌计时器与抖动状态（离开视图 / 重开一局时调用） */
+function clearDrawTimers() {
+  clearTimeout(autoShuffleTimer); autoShuffleTimer = null;
+  clearTimeout(shuffleJumpTimer); shuffleJumpTimer = null;
+  const layout = $('#card-layout');
+  if (layout) layout.classList.remove('shuffling');
+}
+
+/** 离开抽牌视图：清掉未完成的洗牌计时器，避免残留状态污染下一次占卜 */
+function leaveDraw() {
+  clearDrawTimers();
+  showView('home');
 }
 
 /** 翻开单张卡牌 */
@@ -810,6 +853,7 @@ function buildReadingText(spread, draw, dateStr) {
     lines.push(`   ${txt}`);
   });
   lines.push('');
+  lines.push(MAGIC_NOTE);
   lines.push(DISCLAIMER);
   return lines.join('\n');
 }
@@ -953,6 +997,7 @@ function buildDetailText(rec) {
     lines.push(`   ${txt}`);
   });
   lines.push('');
+  lines.push(MAGIC_NOTE);
   lines.push(DISCLAIMER);
   return lines.join('\n');
 }
@@ -982,6 +1027,12 @@ function initEvents() {
   $('#btn-3d-back').addEventListener('click', () => showView('home'));
   $('#btn-3d-spreads').addEventListener('click', () => { renderSpreadList(spreadFilter); openModal('modal-spreads'); });
   $('#btn-3d-flip-all').addEventListener('click', () => { if (window.Tarot3D) window.Tarot3D.flipAll(); });
+  // 3D 全部卡牌落位：此刻「全部翻开」才真正可用（flipAllCards 会跳过未落位的牌）
+  window.addEventListener('tarot:alldealt', () => {
+    if (currentView === '3d' && !state.readingDone && !state.flippedCount) {
+      $('#btn-3d-flip-all').classList.remove('hidden');
+    }
+  });
   // 3D 每翻开一张：计数，全部翻开后复用解读逻辑
   window.addEventListener('tarot:flip3d', () => {
     state.flippedCount += 1;
@@ -1014,13 +1065,14 @@ function initEvents() {
   });
 
   // 抽牌视图
-  $('#btn-shuffle').addEventListener('click', doShuffle);
+  // 「重新占卜」= 重新抽牌（startDraw 内部会自动洗牌），不需要再单独点一次洗牌
+  $('#btn-redeal').addEventListener('click', () => { if (state.spread) startDraw(state.spread); });
   $('#btn-flip-all').addEventListener('click', flipAll);
   $('#card-layout').addEventListener('click', (e) => {
     const card = e.target.closest('.tarot-card');
     if (card) flipCard(card);
   });
-  $('#btn-back-home').addEventListener('click', () => showView('home'));
+  $('#btn-back-home').addEventListener('click', leaveDraw);
 
   // 解读视图
   $('#btn-copy').addEventListener('click', copyReading);

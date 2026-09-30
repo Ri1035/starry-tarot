@@ -211,6 +211,25 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 /* ---------- 卡牌基础 ---------- */
 .card-layout { min-height: 300px; display: flex; justify-content: center; align-items: center; }
+/* 抽牌视图操作区：此前缺失样式，导致按钮左对齐、无间距（视觉错乱），此处补齐 */
+.draw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 30px;
+  animation: fadeUp 0.6s ease both;
+}
+/* 自动洗牌提示文案 */
+.draw-hint {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 2px;
+  color: var(--text-faint);
+  animation: fadeUp 0.8s ease both;
+}
 .card-layout.shuffling .tarot-card { animation: shuffleJump 0.22s ease-in-out infinite; }
 .card-layout.shuffling .tarot-card:nth-child(2n) { animation-delay: 0.05s; }
 .card-layout.shuffling .tarot-card:nth-child(3n) { animation-delay: 0.1s; }
@@ -286,7 +305,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   object-fit: cover;
   background: #0e0820;
 }
-.tarot-card-front .is-reversed img { transform: rotate(180deg); }
+/* 逆位：图片自身带 .is-reversed（由 app.js 直接加在 <img> 上），需原地倒置 180° */
+.tarot-card-front img.is-reversed { transform: rotate(180deg); }
 /* 正逆位角标 */
 .orient-badge {
   position: absolute;
@@ -525,6 +545,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   text-align: center;
   padding: 30px 16px 34px;
   border-top: 1px solid rgba(232, 197, 107, 0.14);
+}
+/* 魔力源声明：页脚醒目的一行「魔力来自互联网」 */
+.magic-note {
+  color: var(--gold-soft);
+  font-size: 13px;
+  letter-spacing: 2px;
+  text-shadow: var(--glow-gold);
+  max-width: 640px;
+  margin: 0 auto 10px;
 }
 .disclaimer {
   color: var(--text-faint);
@@ -955,6 +984,18 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   padding: 8px 20px;
 }
 .about-note { color: var(--text-faint); font-size: 11px; letter-spacing: 1px; margin-top: 18px; }
+/* 个人主页 · 魔力源声明与开发者免责 */
+.about-magic {
+  margin-top: 18px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px dashed rgba(232, 197, 107, 0.35);
+  background: rgba(232, 197, 107, 0.05);
+  color: var(--gold-soft);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+.about-ward { margin-top: 10px; }
 .about-card .btn-link { margin-top: 10px; }
 
 /* ---------- v1.3.0 3D 牌桌 ---------- */
