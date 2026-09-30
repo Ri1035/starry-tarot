@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 const DISCLAIMER = '免责声明：塔罗仅为趣味娱乐，不构成人生、投资、重大决策建议。';
@@ -28,6 +28,7 @@ const state = {
 };
 
 let spreadFilter = 'all'; // 牌阵列表当前筛选分类
+let currentView = 'home'; // 当前所在视图（3D 流程判断用）
 
 /* ---------- 2. 工具函数 ---------- */
 const $ = (sel) => document.querySelector(sel);
@@ -115,11 +116,26 @@ function initStarfield() {
 }
 
 /* ---------- 4. 视图切换 / 弹窗 / Toast ---------- */
-const VIEWS = ['view-home', 'view-gallery', 'view-about', 'view-draw', 'view-reading'];
+const VIEWS = ['view-home', 'view-gallery', 'view-about', 'view-draw', 'view-reading', 'view-3d'];
 
 function showView(name) {
+  const leaving3d = !document.getElementById('view-3d').classList.contains('hidden');
   for (const v of VIEWS) {
     document.getElementById(v).classList.toggle('hidden', v !== 'view-' + name);
+  }
+  currentView = name;
+  // 离开 3D 牌桌时释放 GPU 资源
+  if (leaving3d && window.Tarot3D) window.Tarot3D.unmount();
+  // 进入 3D 牌桌：等布局完成后再挂载（WebGL 画布需要真实尺寸）
+  if (name === '3d') {
+    requestAnimationFrame(() => {
+      if (!window.Tarot3D) {
+        showToast('当前浏览器不支持 3D 牌桌，已为你切换到 2D 占卜');
+        setTimeout(() => { renderSpreadList(spreadFilter); openModal('modal-spreads'); }, 400);
+        return;
+      }
+      window.Tarot3D.mount($('#tarot-table'));
+    });
   }
   if (name === 'gallery') renderGallery(); // 每次进入重渲染，重放入场动画
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -175,7 +191,8 @@ function openSpreadPreview(spread) {
   box.appendChild(buildPreviewSlots(spread));
   $('#btn-start-draw').onclick = () => {
     closeModal('modal-preview');
-    startDraw(spread);
+    if (currentView === '3d') start3dReading(spread); // 3D 视图内走 3D 落牌
+    else startDraw(spread);
   };
   closeModal('modal-spreads');
   openModal('modal-preview');
@@ -417,6 +434,21 @@ function startDraw(spread) {
 
   renderDrawLayout();
   showView('draw');
+}
+
+/** 开始 3D 占卜：沿用抽牌/解读逻辑，仅把落牌交给 table3d */
+function start3dReading(spread) {
+  state.spread = spread;
+  state.draw = drawCards(spread);
+  state.shuffled = true;   // 3D 落牌即视为洗牌完成
+  state.flippedCount = 0;
+  state.readingDone = false;
+
+  $('#btn-3d-flip-all').classList.remove('hidden');
+  if (window.Tarot3D) {
+    window.Tarot3D.startReading(spread, state.draw);
+    showToast('卡牌已落桌，点击翻牌 ✨');
+  }
 }
 
 /** 渲染抽牌区的卡牌（背面朝上） */
@@ -931,6 +963,7 @@ function initEvents() {
   $('#btn-open-spreads').addEventListener('click', () => { renderSpreadList(spreadFilter); openModal('modal-spreads'); });
   $('#btn-quick-draw').addEventListener('click', () => startDraw(getSpread('single')));
   $('#btn-gallery').addEventListener('click', () => showView('gallery'));
+  $('#btn-3d').addEventListener('click', () => showView('3d'));
   $('#btn-about').addEventListener('click', () => showView('about'));
   $('#btn-history').addEventListener('click', () => { renderHistory(); openModal('modal-history'); });
 
@@ -940,10 +973,29 @@ function initEvents() {
       const target = el.dataset.nav;
       if (target === 'spreads') { renderSpreadList(spreadFilter); openModal('modal-spreads'); }
       else if (target === 'history') { renderHistory(); openModal('modal-history'); }
+      else if (target === '3d') { showView('3d'); }
       else if (target === 'gallery') { showView('gallery'); }
       else if (target === 'about') { showView('about'); }
       else if (target === 'home') { showView('home'); }
     });
+  });
+
+  // 3D 牌桌：WebGL 降级时引导回到 2D
+  window.addEventListener('tarot:use2d', () => { renderSpreadList(spreadFilter); openModal('modal-spreads'); });
+  $('#btn-3d-back').addEventListener('click', () => showView('home'));
+  $('#btn-3d-spreads').addEventListener('click', () => { renderSpreadList(spreadFilter); openModal('modal-spreads'); });
+  $('#btn-3d-flip-all').addEventListener('click', () => { if (window.Tarot3D) window.Tarot3D.flipAll(); });
+  // 3D 每翻开一张：计数，全部翻开后复用解读逻辑
+  window.addEventListener('tarot:flip3d', () => {
+    state.flippedCount += 1;
+    if (state.flippedCount >= state.spread.count && !state.readingDone) {
+      state.readingDone = true;
+      $('#btn-3d-flip-all').classList.add('hidden');
+      setTimeout(() => {
+        renderReading();
+        showView('reading');
+      }, 700);
+    }
   });
 
   // 牌阵分类筛选

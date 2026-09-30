@@ -2,6 +2,47 @@
 
 > 本文件用于记录每轮开发的关键决策、进度与待办，防止上下文丢失。
 
+## 2026-09-30 · v1.3.0 实施（3D 占卜牌桌）
+
+### 任务
+按已批准方案实施 3D 占卜牌桌：新增视图保留 2D、不做手势识别、Three.js 走 CDN ESM + importmap。
+
+### 决策记录
+- 技术路线：Three.js 0.160（CDN ESM） + OrbitControls + importmap；table3d.js 为 ES module，
+  通过 `window.Tarot3D = { mount, unmount, startReading, flipAll }` 暴露给经典脚本 app.js。
+- 牌阵坐标：spreads3d.js 依据 spreads.js 的 layout/count 生成 3D 卡位数组。
+- 开源参考：zlZayn/Tarot、htrnguyen-labs/tarot_ritual（MIT），仅参考交互思路，未引入依赖。
+- 资源策略：geometry/material/texture 缓存复用，unmount 时统一 dispose；贴图按牌缓存。
+
+### 实施步骤
+- [x] P1 场景：渲染器 / 相机 / 灯光 / 圆桌 / 星空粒子 / OrbitControls
+- [x] P2 卡牌：Canvas 背面纹理（紫金星月）+ webp 正面贴图、悬停浮起、3D 翻牌
+- [x] P3 牌阵 3D 坐标映射（spreads3d.js）
+- [x] P4 流程：3D 选牌阵 → 落牌 → 点击/一键翻牌 → tarot:flip3d 通知 app.js 出解读
+- [x] WebGL 降级 + 返回 2D 引导
+- [x] E2E 自动化验证（Puppeteer，headless swiftshader）
+
+### 验证与修复记录
+- `mount(el)` 参数与函数内 `const el = renderer.domElement` 同名，ES module 解析即抛
+  `Identifier 'el' has already been declared`，导致整个 3D 模块加载失败、canvas 永不创建。
+  改为 `canvasEl`。
+- 卡牌朝向颠倒：原 `group.rotation.x = Math.PI`（180°）落牌即正面朝上，翻牌动画转回 0°
+  反而背面朝上。修正为落牌 `-Math.PI/2`（背面朝上）、翻牌插值 `-90°→+90°`、终态 `+90°`。
+- 物理光照（r155+ useLegacyLights=false）下 SpotLight/PointLight 强度需按 candela 量级：
+  Ambient 1.1 / Spot 210 / Point 60，否则场景整体欠曝、卡牌不可辨。
+- 背面纹理提亮（#4a2f7e 渐变 + emissive 0.7），卡牌从桌面浮现。
+- E2E 结论：进入 3D → 选牌 → 落牌（背面朝上）→ 翻牌 → 自动出解读 → 重新进入 3D 挂载正常，无 JS 报错。
+
+### 部署记录（地址不写入公开文件，按用户要求仅保留邮箱公开）
+- 见 v1.2.0 部署记录；v1.3.0 部署详见 git tag v1.3.0。
+
+### 技术备忘
+- Three.js 资源释放清单：geometry、material（含 map/normalMap 等贴图）、controls.dispose()、
+  ResizeObserver.disconnect()、cancelAnimationFrame。
+- 渲染循环仅在 3D 视图激活时运行，离开视图立即 unmount，避免后台 GPU 占用。
+- 事件契约：`tarot:draw3d`（app→3D，备用）、`tarot:flip3d`（3D→app 每翻一张）、
+  `tarot:use2d`（WebGL 不可用时引导回 2D）。
+
 ## 2026-09-30 · v1.2.0 实施
 
 ### 任务
