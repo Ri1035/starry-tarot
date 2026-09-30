@@ -47,6 +47,16 @@
   动画按帧推进 → **必须用条件轮询 `waitFor`，不能用固定 sleep 判定动画是否完成**。
 - 模态开合有过渡，按坐标 `page.click` 命中率不稳定 → 改为 `element.click()` + 按状态重试。
 
+### 发布记录
+- [x] 版本 v1.3.3：index.html 全部 `?v=`、页头徽标、`APP_VERSION`
+- [x] GitHub：commit `5d7fe1a`、tag `v1.3.3` 已推送（Ri1035/starry-tarot）
+- [x] Cloudflare Pages：`starry-tarot`（production, main）direct upload，部署产物
+      `https://d3c55a20.starry-tarot.pages.dev`，别名 `https://starry-tarot.pages.dev`
+- [x] 线上验证：`index.html` 与 `js/app.js` / `js/3d/table3d.js` 均为 v1.3.3；
+      `?v=1.3.3` 的 app.js 含魔力源/免责声明与 `tarot:alldealt`；table3d.js 含 `flipper.rotation.y` 与落位事件
+- [x] 隐私：`/docs/DEV_LOG.md`、`/.uploads/` 均返回 index.html SPA 回退（12300B 与不存在路径一致），未泄露
+- [x] R2 冗余清理：删除无引用的 `fonts/noto-sans-runic/400.woff2`（字模改用矢量路径，不再需要字体文件）
+
 ## 2026-09-30 · v1.3.2 3D 修复与首页精简
 
 ### 任务
