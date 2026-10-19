@@ -47,6 +47,14 @@ Rider-Waite 卡面是暖白底，ACES 会把高光压向灰白并降低饱和度
      ③所有牌角距圆心 ≤ 桌面半径（5.5）—— 这条正是本轮修正的实质问题，用测试锁住
 - [x] 三张截图人工比对（首页 / 空桌 / 落牌）
 
+### 发布记录
+- [x] 版本 v1.3.5：index.html 全部 `?v=`、页头徽标、`APP_VERSION`
+- [x] GitHub：commit `effb88d`、tag `v1.3.5` 已推送（Ri1035/starry-tarot）
+- [x] Cloudflare Pages：`starry-tarot`（production, main）direct upload → `6e6c8a4a.starry-tarot.pages.dev`
+- [x] **同一套回归脚本打线上生产环境：48/48 通过、0 控制台错误**
+- [x] 线上实景截图确认：空桌 / 凯尔特十字（10 张，十字 + 右侧柱列）/ 首页星空（含流星）
+      —— 卡牌圆角与接触投影、桌面厚度与金环、十字布局的"一沓牌"柱列均正常
+
 ## 2026-10-01 · v1.3.4 首屏瘦身（实测 3559KB → 675KB，−81%）
 
 ### 任务
