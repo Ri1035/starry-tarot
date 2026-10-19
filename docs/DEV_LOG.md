@@ -39,6 +39,13 @@
       （新增 6 条断言覆盖新交互：2D/3D 各「亮出解读按钮 / 未自动跳转 / 点解读后进入」）
 - [x] 字体覆盖断言回到 0 缺字
 
+### 发布记录
+- [x] 版本 v1.3.6：index.html 全部 `?v=`、页头徽标、`APP_VERSION`
+- [x] GitHub：commit `46d50a1`、tag `v1.3.6` 已推送（Ri1035/starry-tarot）
+- [x] Cloudflare Pages：`starry-tarot`（production, main）→ `7eed617c.starry-tarot.pages.dev`
+- [x] R2：10 个字模按内容指纹 `?v=fb416fe3` 重新上传（路径不变，靠查询串换缓存键）
+- [x] **同一套回归脚本打线上生产环境：53/53 通过、0 控制台错误**
+
 ## 2026-10-01 · v1.3.5 3D 场景与界面粒子重做
 
 ### 任务
