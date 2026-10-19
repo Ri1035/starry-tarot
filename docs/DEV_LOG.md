@@ -82,6 +82,20 @@
   3D 牌桌直接打不开。改用 `new URL('js/3d/table3d.js?v=' + APP_VERSION, document.baseURI)`
   显式基于文档解析。这条与「模块脚本以自身 URL 为基准」的行为不同，容易记错，特此记录。
 
+### 发布记录
+- [x] 版本 v1.3.4：index.html 全部 `?v=`、页头徽标、`APP_VERSION`
+- [x] GitHub：commit `e3aed9b`、tag `v1.3.4` 已推送（Ri1035/starry-tarot）
+      —— 注：推送时发现远端有 3 个本地没有的 README 提交（仅改 README.md，与本次无交集），
+      故先 `git rebase origin/main` 接上远端再推送（**未使用强制推送**）；
+      tag 因 rebase 换了父提交，删除后重建指向新提交。
+- [x] Cloudflare Pages：`starry-tarot`（production, main）direct upload → `52b4db2e.starry-tarot.pages.dev`
+- [x] 线上验证（br/gzip 真实值）：
+      - `css/fonts.css` **3715 B**（优化前 br 32498 B，−89%）
+      - `three.module.min.js`：声明 gzip 的客户端 **166182 B**、其他客户端 670681 B（合规协商）
+      - 旧 R2 路径（`three.module.js` / `fonts/notoserifsc/*` / `OrbitControls.js`）**全部 404**，清理生效
+      - 隐私：`/docs/DEV_LOG.md` 返回 12785 B，与 `/index.html` 完全同尺寸 → SPA 回退，未泄露
+- [x] **同一套回归脚本打线上生产环境：45/45 通过、0 控制台错误**
+
 ## 2026-10-01 · v1.3.3 左右翻牌 / 固定视角 / 魔幻符文
 
 ### 任务
