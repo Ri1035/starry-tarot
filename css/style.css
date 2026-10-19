@@ -686,7 +686,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .g-card-name {
   display: block;
   font-family: var(--font-body);
-  font-size: 14px; font-weight: 600; letter-spacing: 2px;
+  font-size: 14px; font-weight: 700; letter-spacing: 2px;
   color: var(--gold-soft);
   padding: 8px 8px 2px;
   text-align: center;
@@ -743,7 +743,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .card-detail-section + .card-detail-section { margin-top: 14px; }
 .card-detail-section h4 {
   font-family: var(--font-body);
-  font-size: 13px; font-weight: 600; letter-spacing: 2px;
+  font-size: 13px; font-weight: 700; letter-spacing: 2px;
   color: var(--gold);
   margin-bottom: 5px;
 }

@@ -74,6 +74,8 @@ let hoverCard = null;        // 当前悬停的牌
 let raycaster = null;
 let ndc = null;
 let pointerDown = null;      // 记录按下位置，用于区分点击与滑动
+let hoverRaf = 0;            // 悬停拾取的合并帧句柄
+let hoverPending = null;     // 待处理的最新指针位置
 
 // 共享几何 / 材质（跨牌复用，避免重复创建）
 let planeGeo = null;
@@ -560,10 +562,13 @@ function ensureCardShared() {
 }
 
 /** 牌面贴图（按图名缓存，避免同一张牌重复解码） */
+let texLoader = null;
 function getFrontTexture(img) {
   let t = frontTexCache.get(img);
   if (t) return t;
-  t = new THREE.TextureLoader().load('assets/cards/' + img);
+  // 复用同一个 loader：原实现每次调用都 new 一个，纯属多余分配
+  if (!texLoader) texLoader = new THREE.TextureLoader();
+  t = texLoader.load('assets/cards/' + img);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   frontTexCache.set(img, t);
@@ -762,8 +767,21 @@ function onPointerDown(e) {
   pointerDown = [e.clientX, e.clientY];
 }
 
+/** 悬停拾取：把高频 pointermove 合并到每帧一次
+ *
+ * 高刷屏上 pointermove 可达 120Hz+，每次都对全部卡牌做一次射线求交是纯浪费；
+ * 这里只记录最新位置，交由 rAF 统一处理（每帧最多一次）。
+ */
 function onPointerMove(e) {
-  const c = pickCard(e);
+  hoverPending = { clientX: e.clientX, clientY: e.clientY };
+  if (!hoverRaf) hoverRaf = requestAnimationFrame(applyHover);
+}
+
+function applyHover() {
+  hoverRaf = 0;
+  if (disposed || !hoverPending || !renderer) return;
+  const c = pickCard(hoverPending);
+  hoverPending = null;
   if (c !== hoverCard) {
     hoverCard = c;
     renderer.domElement.style.cursor = c ? 'pointer' : 'default';
@@ -784,6 +802,8 @@ function onPointerUp(e) {
 function onPointerLeave() {
   pointerDown = null;
   hoverCard = null;
+  hoverPending = null;               // 丢弃待处理的悬停，避免指针已离开仍被拾取
+  cancelAnimationFrame(hoverRaf); hoverRaf = 0;
   if (renderer) renderer.domElement.style.cursor = 'default';
 }
 
@@ -925,6 +945,8 @@ export function unmount() {
   anims.length = 0;
   hoverCard = null;
   pointerDown = null;
+  cancelAnimationFrame(hoverRaf); hoverRaf = 0; hoverPending = null;
+  texLoader = null;
 
   if (renderer) {
     renderer.dispose();

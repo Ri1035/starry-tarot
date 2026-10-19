@@ -1,5 +1,54 @@
 # 星穹塔罗 · 版本记录
 
+## v1.3.4 · 首屏瘦身（实测 3559KB → 675KB，−81%）
+- **Three.js 改为按需加载**：原先 index.html 用 `<script type="module">` 静态引入 table3d.js，
+  而后者 `import 'three'`，导致**用户没开 3D 也要下载 1243KB 的 Three.js**。
+  现改为进入 3D 视图时由 `ensureTarot3D()` 动态 `import()`，首屏省下
+  Three.js 1243KB + table3d 33KB + spreads3d 4KB
+- **Three.js 换官方 min 构建（MIT）并 gzip 预压缩**：r2.dev 不做传输压缩（实测 br/identity 均为
+  1272972B），故上传时用 `--content-encoding gzip` 预压缩。R2 会按 `Accept-Encoding` 正确协商：
+  声明 gzip 的客户端拿到 166KB，其他客户端拿到解压后的 671KB。
+  3D 库从 1243KB → **166KB（−87%）**，且解压后与官方 min 版**字节级一致**
+- **字体改「站点字符集子集」**：原方案是 Google Fonts 的 101 个 unicode-range 切片 × 3 字重
+  （309 个 `@font-face`，fonts.css 328KB）。现按站点实际用到的 1299 个字符重建子集：
+  `@font-face` 309 → 10 个，fonts.css 328KB → 21KB，字模 1709KB → **511KB**，
+  且**一次覆盖全站文本**，换页面不再触发新子集下载（已用 CSSOM 校验：0 个缺字）
+- **字体换新命名空间 `fonts/subset/`**：字模带一年 immutable 缓存，复用旧 URL 会与浏览器里
+  已缓存的旧切片互相污染（旧 CSS + 新文件 = 缺字），故启用全新路径
+- **头像 PNG → WebP + 懒加载**：512px PNG 113KB → 256px WebP **7.9KB**（−93%），
+  并加 `loading="lazy" decoding="async"`；该图仅在「关于我」视图出现，首屏不再下载
+- **R2 冗余清理**：删除 311 个已无引用的旧对象（旧字体 309 个 + 旧 three.module.js + OrbitControls.js），
+  占用 19.3MB → **0.66MB**
+- 代码级优化：
+  - `drawCards`：改为**部分 Fisher-Yates**（只洗前 count 个位置），省掉一次全量洗牌 + slice + map
+  - `renderGallery`：78 个卡片监听 → **1 个事件委托**（重渲染后依然有效，不再反复创建/销毁监听）
+  - `flipCard`：**原地填充正面层**，不再 `replaceChild` 重建整卡位（少建 5 个节点、少一次重排，
+    也不再需要手工搬 `--tilt` 与 `slot-*` 类名）
+  - `flipAll`：N 个 `setTimeout` → 单个可中止的 rAF 交错循环
+  - 星域 `resize` 加 150ms 防抖（原先拖拽窗口会连续重建星群）
+  - 星域尊重 `prefers-reduced-motion`：只渲染一帧静态星空（原 rAF 循环不受 CSS 媒体查询约束）
+  - 3D `pointermove` 拾取合并到每帧一次（高刷屏原先可达 120Hz+ 逐次射线求交）
+  - 3D 复用单个 `TextureLoader`；`pointerleave` 时丢弃待处理悬停
+  - CSS 里两处 `font-weight: 600` 统一为 700（新字体集只含 400/700，避免声明与实际字重不一致）
+- **修复**：在抽牌视图点「全部翻开」后立刻离开，尚未触发的翻牌定时器仍会累加 `flippedCount`，
+  凑满后把用户**从首页硬拽进解读视图**。改用可中止的 rAF 循环，`clearDrawTimers` 中统一 `cancelAnimationFrame`
+- 说明：审查方案中「3D 纹理被重复释放三次」一条经核实**不成立**（`clearCards` 已先把卡组移出场景，
+  共享几何/材质与牌面贴图各自只释放一次），未做无谓改动
+
+### 实测对比（Chrome 全量请求抓取，前后同一环境）
+| 指标 | v1.3.3 | v1.3.4 | 变化 |
+|---|---|---|---|
+| 首屏流量 | 3559 KB | **675 KB** | **−81%** |
+| 请求数 | 39 | **16** | −23 |
+| 字体 | 1709 KB / 29 文件 | **511 KB / 10 文件** | −70% |
+| Three.js | 1243 KB（首屏） | 首屏 0，进 3D 才加载 166 KB | −87% |
+| 头像 | 110 KB（首屏） | 首屏 0，进「关于我」才加载 7.9 KB | −93% |
+| 图片请求 | 1 | **0** | — |
+| R2 占用 | 19.3 MB | **0.66 MB** | −97% |
+
+（上表为本地无压缩环境的同口径对比；线上经 Cloudflare brotli 后，脚本/样式还会再小一截，
+字模为 woff2 本身已压缩、不再受益。）
+
 ## v1.3.3 · 左右翻牌 · 固定视角 · 魔幻符文
 - 翻牌方向修正：2D/3D 由"上下翻"改为塔罗习惯的**左右翻**。3D 实现为卡牌挂 flipper 子节点，
   翻转只改 `flipper.rotation.y`（0 → π），外层 `group.rotation.x = -90°` 放平后即表现为绕纵深轴掀开

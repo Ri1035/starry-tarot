@@ -2,6 +2,86 @@
 
 > 本文件用于记录每轮开发的关键决策、进度与待办，防止上下文丢失。
 
+## 2026-10-01 · v1.3.4 首屏瘦身（实测 3559KB → 675KB，−81%）
+
+### 任务
+用户要求「检查项目并给出优化方案」，随后指示「先做好优化」。
+
+### 实测基线（Chrome 全量请求抓取，非估算）
+首屏 3559 KB / 39 请求，其中两项占 83% 且都与首屏无关：
+- 字体 1709 KB / 29 文件（原方案是 Google Fonts 101 个切片 × 3 字重 = 309 个 @font-face）
+- Three.js 1243 KB（index.html 静态 `<script type="module">` 引入 table3d.js，后者 `import 'three'`，
+  于是「没开 3D 也照样下载」）
+- 另有 avatar.png 110 KB（只在「关于我」视图出现，却首屏就下载）
+
+### 关键决策与实施
+1. **Three.js 三管齐下**：按需 `import()` + 官方 min 构建 + gzip 预压缩上传。
+   - 实测发现 **r2.dev 不做传输压缩**（`Accept-Encoding: br` 与 `identity` 均返回 1272972 B）。
+   - 于是上传时用 `wrangler r2 object put --content-encoding gzip`。验证：R2 会按请求头正确协商
+     —— 声明 gzip 的客户端收到 166182 B，其他客户端收到解压后的 670681 B，
+     且解压结果与官方 min 版 **`cmp` 字节级一致**。这是**合规**的内容协商，不是静态硬塞 gzip。
+   - 结果：3D 库 1243 KB → 166 KB（−87%），且首屏完全不再加载（−1280 KB）。
+2. **字体子集**：站点文本固定（78 张牌义 + 牌阵 + 界面文案），共 **1299 个字符**。
+   交给 Google Fonts 官方 `text=` 接口换取每字重分块的小 woff2，自建 unicode-range。
+   - 309 个 @font-face → **10 个**；fonts.css 328 KB → **21 KB**；字模 1709 KB → **511 KB**。
+   - 优势不止体积：原方案下每进一个新页面都可能拉新切片，新方案**一次覆盖全站**。
+   - **踩坑 1**：首版采集器只匹配单/双引号字符串，漏了**反引号模板串**，
+     导致页脚「卡图素材来自公版…」的 `材`/`版` 缺字。改成状态机扫描（并跳过注释，
+     避免 URL 里的 `//` 被行注释规则误伤）。
+   - **踩坑 2（关键）**：字模带一年 immutable 缓存，**绝不能复用旧 URL**——
+     旧 CSS + 新文件会互相污染成缺字。故启用全新命名空间 `fonts/subset/`，旧目录随后整体删除。
+   - 验证：用 CSSOM 解析所有 `@font-face` 的 unicode-range，与 `document.body.textContent`
+     求差集 → **0 个缺字**。
+3. **头像**：512px PNG 113 KB → 256px WebP 7.9 KB（−93%）+ `loading="lazy" decoding="async"`。
+4. **R2 清理**：删除 311 个已无引用的对象（旧字体 309 + 旧 three.module.js + OrbitControls.js），
+   占用 **19.3 MB → 0.66 MB**。
+
+### 代码级优化（内存 / 计算 / 节流）
+- `drawCards` 全量洗牌 77 次 + slice + map → **部分 Fisher-Yates**（只洗前 count 个位置）
+- `renderGallery` 78 个监听 → **1 个事件委托**（重渲染后依然有效）
+- `flipCard` **原地填充正面层**，不再 `replaceChild` 重建整卡位
+- `flipAll` N 个 `setTimeout` → 单个可中止的 rAF 交错循环
+- 星域 `resize` 加 150 ms 防抖；星域尊重 `prefers-reduced-motion`（只画一帧静态星空）
+- 3D `pointermove` 拾取合并到每帧一次；复用单个 `TextureLoader`；`pointerleave` 丢弃待处理悬停
+
+### 修复的真 bug
+- **「全部翻开」后立刻离开抽牌视图 → 被从首页硬拽进解读视图**。
+  根因：N 个 `setTimeout` 不会被 `clearDrawTimers` 取消，离开后仍继续翻牌并累加
+  `flippedCount`，凑满即触发 `checkAllFlipped` 跳转。改用可中止的 rAF 循环并纳入
+  `clearDrawTimers` 统一 `cancelAnimationFrame`。
+
+### 方案审查中的自我纠错
+- 原方案列的「3D 纹理被重复 dispose 三次」**不成立**：`clearCards` 已先 `scene.remove(c.group)`，
+  场景遍历根本走不到卡牌，共享几何/材质与牌面贴图各自只释放一次。**未做无谓改动**。
+- 原方案列的 `.hero-title` `glowBreathe`（动画 `text-shadow`，重绘属性）收益有限、
+  改动会动到视觉签名，**本轮暂不做**，留作可选。
+
+### 验证
+- [x] 语法检查（`node --check`）app.js / table3d.js 通过
+- [x] puppeteer 回归 **45/45 通过、0 控制台错误**（含首屏不加载 3D、字体 0 缺字、
+      画廊委托、离开抽牌视图不误跳、3D 懒加载→落牌→翻牌→解读、二次挂载）
+- [x] 首屏实测复测（同一环境、同口径）
+
+### 实测对比（Chrome 全量请求抓取）
+- 首屏流量 **3559 KB → 675 KB（−81%）**，请求数 **39 → 16**
+- 字体 1709 KB / 29 文件 → **511 KB / 10 文件**
+- Three.js 1243 KB（首屏）→ 首屏 0，进 3D 才加载 **166 KB**
+- 头像 110 KB（首屏）→ 首屏 0，进「关于我」才加载 7.9 KB；首屏图片请求 **1 → 0**
+- R2 占用 19.3 MB → **0.66 MB**
+
+### 测试踩坑（重要）
+- **回归测试抓到真事故 1**：`const CARD_BY_ID` 与 [cards.js](file:///workspace/repo/js/data/cards.js#L495)
+  里**已存在**的同名全局索引撞名 → `SyntaxError: Identifier 'CARD_BY_ID' has already been declared`
+  → **整个 app.js 不执行**（页面看着"能开"，但所有交互全废）。
+  `node --check` 检查单文件语法**抓不到跨文件全局冲突**，只有浏览器能暴露。
+  修法：直接**复用 cards.js 已有的 `CARD_BY_ID`**（顺带省掉一个重复 Map），
+  并在回归脚本开头加「app.js 正常执行（无致命错误）」前置守卫，让这类问题第一时间暴露。
+- **回归测试抓到真事故 2**：动态 import 的路径写错。
+  **`import()` 在「经典脚本」里是以本脚本自身的 URL 为基准解析相对路径的**——
+  app.js 位于 `/js/`，写 `'./js/3d/table3d.js'` 会被解析成 `/js/js/3d/table3d.js` → 404，
+  3D 牌桌直接打不开。改用 `new URL('js/3d/table3d.js?v=' + APP_VERSION, document.baseURI)`
+  显式基于文档解析。这条与「模块脚本以自身 URL 为基准」的行为不同，容易记错，特此记录。
+
 ## 2026-10-01 · v1.3.3 左右翻牌 / 固定视角 / 魔幻符文
 
 ### 任务

@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.3.3';
+const APP_VERSION = '1.3.4';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 // 魔力源声明：按用户要求注明「魔力来自互联网」，并声明开发者不受反噬与诅咒
@@ -71,37 +71,39 @@ function initStarfield() {
   const canvas = $('#starfield');
   const ctx = canvas.getContext('2d');
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  // 系统开启「减少动效」时只渲染一帧静态星空：
+  // 原有的 rAF 循环不受 CSS 的 prefers-reduced-motion 影响，会一直跑下去
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let stars = [];
   let w = 0, h = 0;
+  let resizeTimer = null;
 
-  function resize() {
-    w = window.innerWidth;
-    h = window.innerHeight;
+  /** 按视口尺寸重建星群（密度自适应，避免移动端过密） */
+  function build() {
     canvas.width = w * DPR;
     canvas.height = h * DPR;
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    // 按面积重建星群（密度自适应，避免移动端过密）
     const count = Math.min(180, Math.floor((w * h) / 9000));
-    stars = [];
+    stars = new Array(count);
     for (let i = 0; i < count; i++) {
-      stars.push({
+      stars[i] = {
         x: Math.random() * w,
         y: Math.random() * h,
         r: Math.random() * 1.4 + 0.3,
         base: Math.random() * 0.5 + 0.25,
         speed: Math.random() * 0.02 + 0.004,
         phase: Math.random() * Math.PI * 2
-      });
+      };
     }
   }
 
-  function frame(t) {
+  function draw(t) {
     ctx.clearRect(0, 0, w, h);
     for (let i = 0; i < stars.length; i++) {
       const s = stars[i];
-      const alpha = s.base + Math.sin(t * s.speed + s.phase) * 0.25;
+      const alpha = reduceMotion ? s.base : s.base + Math.sin(t * s.speed + s.phase) * 0.25;
       ctx.globalAlpha = Math.max(0.08, Math.min(1, alpha));
       ctx.fillStyle = i % 7 === 0 ? '#f5dfa0' : '#e6dcff';
       ctx.beginPath();
@@ -109,16 +111,55 @@ function initStarfield() {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
+  function frame(t) {
+    draw(t);
     requestAnimationFrame(frame);
   }
 
-  window.addEventListener('resize', resize);
-  resize();
-  requestAnimationFrame(frame);
+  function onResize() {
+    w = window.innerWidth;
+    h = window.innerHeight;
+    build();
+    if (reduceMotion) draw(0);   // 静态模式下重绘一帧
+  }
+
+  // resize 会连续触发（拖拽窗口时每秒数十次），每次重建星群纯属浪费，防抖 150ms
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(onResize, 150);
+  });
+
+  onResize();
+  if (!reduceMotion) requestAnimationFrame(frame);
 }
 
 /* ---------- 4. 视图切换 / 弹窗 / Toast ---------- */
 const VIEWS = ['view-home', 'view-gallery', 'view-about', 'view-draw', 'view-reading', 'view-3d'];
+
+/* ---------- 4.1 3D 模块按需加载 ---------- */
+// v1.3.4 起 table3d.js 及其依赖的 Three.js 不再随首屏加载：
+// 首屏省下约 1.28MB（Three.js 1.24MB + table3d 33KB + spreads3d 4KB），
+// 代价是首次进入 3D 牌桌时多一次网络往返（模块已 gzip 至 166KB，且带一年 immutable 缓存）。
+// 用 Promise 缓存保证并发调用只触发一次加载；失败时清空缓存以便下次重试。
+let tarot3dPromise = null;
+function ensureTarot3D() {
+  if (!tarot3dPromise) {
+    // 注意：动态 import() 在「经典脚本」中是以 **本脚本自身的 URL** 为基准解析相对路径的
+    // （app.js 位于 /js/，若写 './js/3d/table3d.js' 会解析成 /js/js/3d/… 而 404）。
+    // 这里显式用 document.baseURI 解析，语义清晰，也兼容把站点部署到子路径的情况。
+    const url = new URL('js/3d/table3d.js?v=' + APP_VERSION, document.baseURI).href;
+    tarot3dPromise = import(url)
+      .then(() => true)
+      .catch((err) => {
+        console.warn('[3D] 模块加载失败：', err);
+        tarot3dPromise = null;
+        return false;
+      });
+  }
+  return tarot3dPromise;
+}
 
 function showView(name) {
   const leaving3d = !document.getElementById('view-3d').classList.contains('hidden');
@@ -131,17 +172,20 @@ function showView(name) {
   if (leavingDraw && name !== 'draw') clearDrawTimers();
   // 离开 3D 牌桌时释放 GPU 资源
   if (leaving3d && window.Tarot3D) window.Tarot3D.unmount();
-  // 进入 3D 牌桌：等布局完成后再挂载（WebGL 画布需要真实尺寸）
+  // 进入 3D 牌桌：按需加载 3D 模块后再挂载（WebGL 画布需要真实尺寸）
   if (name === '3d') {
     // 每次进入都先收起「全部翻开」：等落牌全部就位（tarot:alldealt）才重新露出
     $('#btn-3d-flip-all').classList.add('hidden');
     requestAnimationFrame(() => {
-      if (!window.Tarot3D) {
-        showToast('当前浏览器不支持 3D 牌桌，已为你切换到 2D 占卜');
-        setTimeout(() => { renderSpreadList(spreadFilter); openModal('modal-spreads'); }, 400);
-        return;
-      }
-      window.Tarot3D.mount($('#tarot-table'));
+      ensureTarot3D().then((ok) => {
+        if (currentView !== '3d') return;   // 加载期间用户已切走，不再挂载
+        if (!ok || !window.Tarot3D) {
+          showToast('当前浏览器不支持 3D 牌桌，已为你切换到 2D 占卜');
+          setTimeout(() => { renderSpreadList(spreadFilter); openModal('modal-spreads'); }, 400);
+          return;
+        }
+        window.Tarot3D.mount($('#tarot-table'));
+      });
     });
   }
   if (name === 'gallery') renderGallery(); // 每次进入重渲染，重放入场动画
@@ -347,7 +391,12 @@ const GALLERY_FILTERS = {
 
 let galleryFilter = 'all';
 
-/** 渲染画廊网格（按当前筛选） */
+/** 渲染画廊网格（按当前筛选）
+ *
+ * 点击不用「每张卡各绑一个监听」（78 个监听随每次重渲染反复创建/销毁），
+ * 改为在 #gallery-grid 上用一次事件委托，靠 data-card-id 查表（见 initEvents）。
+ * 查表复用 cards.js 已建好的 CARD_BY_ID（id → 卡牌对象），不再重复建索引。
+ */
 function renderGallery() {
   const grid = $('#gallery-grid');
   grid.innerHTML = '';
@@ -356,15 +405,15 @@ function renderGallery() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'g-card';
+    btn.dataset.cardId = card.id;
     btn.setAttribute('aria-label', card.name);
     btn.style.setProperty('--i', i);
     btn.innerHTML =
       `<span class="g-card-inner">
-         <img src="assets/cards/${card.img}" alt="${card.name}" loading="lazy" />
+         <img src="assets/cards/${card.img}" alt="${card.name}" loading="lazy" decoding="async" />
          <span class="g-card-name">${card.name}</span>
          <span class="g-card-en">${card.nameEn}</span>
        </span>`;
-    btn.addEventListener('click', () => openCardDetail(card));
     grid.appendChild(btn);
   });
 }
@@ -413,17 +462,25 @@ function openCardDetail(card) {
 
 /* ---------- 6. 抽牌流程 ---------- */
 
-/** 从 78 张中随机抽取 count 张（不重复），随机正/逆位 */
+/** 从 78 张中随机抽取 count 张（不重复），随机正/逆位
+ *
+ * 只需抽 count 张，因此对副本做「部分 Fisher-Yates」——只洗前 count 个位置：
+ * 相比原实现（全量洗 77 次 + slice 再 map），省掉两次数组分配和大量无用交换。
+ * 副本仍是必需的：绝不能就地打乱 TAROT_CARDS，否则会污染画廊等其他视图。
+ */
 function drawCards(spread) {
-  const pool = TAROT_CARDS.slice(); // 浅拷贝一份索引，避免修改原始数据
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = randInt(0, i + 1);
-    const t = pool[i]; pool[i] = pool[j]; pool[j] = t; // Fisher-Yates 洗牌
+  const pool = TAROT_CARDS.slice();
+  const n = Math.min(spread.count, pool.length);
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const j = i + randInt(0, pool.length - i);   // 在 [i, len) 中随机取一张
+    const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    out[i] = {
+      card: pool[i],
+      orientation: Math.random() < 0.5 ? 'upright' : 'reversed' // 50% 正位 / 50% 逆位
+    };
   }
-  return pool.slice(0, spread.count).map((card) => ({
-    card,
-    orientation: Math.random() < 0.5 ? 'upright' : 'reversed' // 50% 正位 / 50% 逆位
-  }));
+  return out;
 }
 
 /** 开始占卜：进入抽牌视图并摆放卡牌（默认自动洗牌，无需手动点击） */
@@ -453,10 +510,13 @@ function start3dReading(spread) {
   state.flippedCount = 0;
   state.readingDone = false;
 
-  if (window.Tarot3D) {
+  // 落牌依赖按需加载的 3D 模块：等待就绪后再落牌
+  // （正常路径下进入 3D 视图时已加载完成，此处是并发点击时的兜底）
+  ensureTarot3D().then((ok) => {
+    if (currentView !== '3d' || !ok || !window.Tarot3D) return;
     window.Tarot3D.startReading(spread, state.draw);
     showToast('卡牌已落桌，点击翻牌 ✨');
-  }
+  });
   // 「全部翻开」不在此时显示：未落位的牌会被 flipAllCards 跳过，
   // 过早露出按钮会让人"点了没反应"。改由 table3d 在全部牌落位后派发
   // tarot:alldealt 事件、在 initEvents 中统一露出（时序完全由真实动画驱动）。
@@ -703,9 +763,10 @@ function makeSlot(spread, d, index, faceDown) {
 }
 
 /* ---------- 6.1 洗牌（默认自动） ---------- */
-// 两个计时器分开管理，避免「自动洗牌延迟」与「洗牌抖动时长」互相干扰
+// 计时器分开管理，避免「自动洗牌延迟」「洗牌抖动时长」「交错翻牌」互相干扰
 let autoShuffleTimer = null;   // 进入抽牌视图 → 开始洗牌的延迟
 let shuffleJumpTimer = null;   // 洗牌抖动动画时长
+let flipAllRaf = 0;            // 「全部翻开」的交错翻牌循环句柄
 
 /** 自动洗牌：稍作延迟，等卡牌落位动画（dealIn 0.5s）走完再抖动，观感更连贯 */
 function autoShuffle() {
@@ -734,10 +795,11 @@ function doShuffle() {
   }, 1200);
 }
 
-/** 清理抽牌视图的洗牌计时器与抖动状态（离开视图 / 重开一局时调用） */
+/** 清理抽牌视图的计时器 / 交错翻牌循环 / 抖动状态（离开视图、重开一局时调用） */
 function clearDrawTimers() {
   clearTimeout(autoShuffleTimer); autoShuffleTimer = null;
   clearTimeout(shuffleJumpTimer); shuffleJumpTimer = null;
+  cancelAnimationFrame(flipAllRaf); flipAllRaf = 0;   // 中止未翻完的「全部翻开」
   const layout = $('#card-layout');
   if (layout) layout.classList.remove('shuffling');
 }
@@ -748,37 +810,62 @@ function leaveDraw() {
   showView('home');
 }
 
-/** 翻开单张卡牌 */
+/** 翻开单张卡牌
+ *
+ * 原地把牌面填进既有的正面层即可：卡位 DOM 本来就完整（背面 + 空的正面），
+ * 原实现却 new 一个整卡位再 replaceChild —— 会丢弃并重建 5 个节点、触发重排，
+ * 还得手动把 --tilt 和 slot-* 类名搬到新节点上。这里改为只补正面内容。
+ */
 function flipCard(cardEl) {
   if (!state.shuffled || cardEl.classList.contains('flipped')) return;
   const index = Number(cardEl.dataset.drawIndex);
   const d = state.draw[index];
   if (d === undefined) return;
 
-  // 用带牌面的完整卡位替换原卡位，并立即触发 3D 翻牌动画
-  const slot = cardEl.closest('.card-slot');
-  const fresh = makeSlot(state.spread, d, index, false);
-  const newCard = fresh.querySelector('.tarot-card');
-  newCard.dataset.drawIndex = index;
-  // 保留原卡位的倾斜角度与网格区类名（slot-* / area-* 等）
-  newCard.style.setProperty('--tilt', cardEl.style.getPropertyValue('--tilt'));
-  for (const cls of slot.classList) fresh.classList.add(cls);
-  newCard.classList.remove('flipped');
-  slot.parentNode.replaceChild(fresh, slot);
+  const front = cardEl.querySelector('.tarot-card-front');
+  if (front && !front.firstChild) {
+    const img = document.createElement('img');
+    img.src = 'assets/cards/' + d.card.img;
+    img.alt = d.card.name;
+    img.decoding = 'async';
+    if (d.orientation === 'reversed') img.classList.add('is-reversed');
+    front.style.background = '';   // 去掉盖住正面的临时深色底，交回 CSS 的 --bg-card
+    front.appendChild(img);
+
+    const badge = document.createElement('span');
+    badge.className = 'orient-badge' + (d.orientation === 'reversed' ? ' reversed' : '');
+    badge.textContent = d.orientation === 'reversed' ? '逆位' : '正位';
+    front.appendChild(badge);
+  }
 
   // 双 rAF 确保浏览器先绘制背面，再翻面
-  requestAnimationFrame(() => requestAnimationFrame(() => newCard.classList.add('flipped')));
+  requestAnimationFrame(() => requestAnimationFrame(() => cardEl.classList.add('flipped')));
 
   state.flippedCount += 1;
   checkAllFlipped();
 }
 
-/** 全部翻开（逐张交错延迟） */
+/** 全部翻开（逐张交错延迟）
+ *
+ * 用单个 rAF 循环做交错，替代 N 个 setTimeout：
+ * 既省掉一批定时器，也能在「中途离开抽牌视图」时被 clearDrawTimers 整批中止。
+ * （原实现下，离开视图后尚未触发的定时器仍会翻牌并累加 flippedCount，
+ *   一旦凑满就会把用户从首页硬拽进解读视图。）
+ */
 function flipAll() {
   if (!state.shuffled) return;
   const cards = $$('#card-layout .tarot-card:not(.flipped)');
-  cards.forEach((card, i) => {
-    setTimeout(() => flipCard(card), i * 130);
+  if (!cards.length) return;
+  const STEP = 130;
+  let i = 0, t0 = 0;
+  cancelAnimationFrame(flipAllRaf);
+  flipAllRaf = requestAnimationFrame(function run(now) {
+    if (!state.shuffled) { flipAllRaf = 0; return; }
+    if (now - t0 >= STEP) {
+      t0 = now;
+      flipCard(cards[i++]);
+    }
+    flipAllRaf = i < cards.length ? requestAnimationFrame(run) : 0;
   });
 }
 
@@ -1062,6 +1149,14 @@ function initEvents() {
   // 画廊筛选
   $$('#gallery-filters .filter-chip').forEach((chip) => {
     chip.addEventListener('click', () => setGalleryFilter(chip.dataset.filter));
+  });
+  // 画廊卡片点击：一次委托覆盖全部 78 张（重渲染后依然有效，无需重新绑定）
+  // CARD_BY_ID 定义在 cards.js（该文件先于 app.js 加载）
+  $('#gallery-grid').addEventListener('click', (e) => {
+    const btn = e.target.closest('.g-card');
+    if (!btn) return;
+    const card = CARD_BY_ID[btn.dataset.cardId];
+    if (card) openCardDetail(card);
   });
 
   // 抽牌视图
