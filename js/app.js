@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.3.4';
+const APP_VERSION = '1.3.5';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 // 魔力源声明：按用户要求注明「魔力来自互联网」，并声明开发者不受反噬与诅咒
@@ -74,9 +74,24 @@ function initStarfield() {
   // 系统开启「减少动效」时只渲染一帧静态星空：
   // 原有的 rAF 循环不受 CSS 的 prefers-reduced-motion 影响，会一直跑下去
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let stars = [];
+
+  // 三层星：由远及近 依次变大、变亮、漂移更快，拉开纵深。
+  // 原实现 180 颗星半径/亮度全随机，看起来是一张"平贴纸"，没有空间感。
+  const LAYERS = [
+    { share: 0.55, rMin: 0.30, rMax: 0.80, alpha: 0.38, drift: 1.8 },
+    { share: 0.31, rMin: 0.70, rMax: 1.30, alpha: 0.66, drift: 3.6 },
+    { share: 0.14, rMin: 1.15, rMax: 2.00, alpha: 1.00, drift: 6.4 }
+  ];
+  const METEOR_MAX = 2;          // 同屏最多几颗流星
+  const METEOR_RATE = 0.30;      // 每秒生成概率
+
+  let cool = [];                 // 冷色星（按颜色分组，绘制时只需切换两次 fillStyle）
+  let warm = [];                 // 暖金星
+  let meteors = [];
   let w = 0, h = 0;
   let resizeTimer = null;
+  let parX = 0, parY = 0;        // 指针视差当前偏移
+  let parTX = 0, parTY = 0;      // 指针视差目标偏移
 
   /** 按视口尺寸重建星群（密度自适应，避免移动端过密） */
   function build() {
@@ -85,36 +100,119 @@ function initStarfield() {
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    const count = Math.min(180, Math.floor((w * h) / 9000));
-    stars = new Array(count);
-    for (let i = 0; i < count; i++) {
-      stars[i] = {
-        x: Math.random() * w,
-        y: Math.random() * h,
-        r: Math.random() * 1.4 + 0.3,
-        base: Math.random() * 0.5 + 0.25,
-        speed: Math.random() * 0.02 + 0.004,
-        phase: Math.random() * Math.PI * 2
-      };
+
+    // 密度比 v1.3.4 提高（/9000 → /6000）：原先是 128 颗，现在 1280×900 下约 192 颗，
+    // 配合三层视差才有"星海"的观感；上限 320 防止超宽屏过密
+    const total = Math.min(320, Math.floor((w * h) / 6000));
+    cool = [];
+    warm = [];
+    meteors.length = 0;
+
+    for (const layer of LAYERS) {
+      const n = Math.round(total * layer.share);
+      for (let i = 0; i < n; i++) {
+        const star = {
+          x: Math.random() * w,
+          y: Math.random() * h,
+          r: layer.rMin + Math.random() * (layer.rMax - layer.rMin),
+          base: layer.alpha * (0.55 + Math.random() * 0.45),
+          speed: 0.004 + Math.random() * 0.016,          // 闪烁频率
+          phase: Math.random() * Math.PI * 2,
+          drift: layer.drift * (0.6 + Math.random() * 0.8)
+        };
+        (Math.random() < 0.16 ? warm : cool).push(star);
+      }
     }
   }
 
-  function draw(t) {
-    ctx.clearRect(0, 0, w, h);
-    for (let i = 0; i < stars.length; i++) {
-      const s = stars[i];
-      const alpha = reduceMotion ? s.base : s.base + Math.sin(t * s.speed + s.phase) * 0.25;
-      ctx.globalAlpha = Math.max(0.08, Math.min(1, alpha));
-      ctx.fillStyle = i % 7 === 0 ? '#f5dfa0' : '#e6dcff';
+  /** 生成一颗流星：从屏幕一侧斜穿到另一侧 */
+  function spawnMeteor() {
+    const dir = Math.random() < 0.5 ? 1 : -1;             // 1: 左上→右下；-1: 右上→左下
+    const speed = 420 + Math.random() * 380;
+    const angle = 0.30 + Math.random() * 0.22;            // 与水平线的夹角
+    meteors.push({
+      x: dir === 1 ? -w * 0.08 : w * 1.08,
+      y: h * (0.03 + Math.random() * 0.4),
+      vx: Math.cos(angle) * speed * dir,
+      vy: Math.sin(angle) * speed,
+      life: 1
+    });
+  }
+
+  // 注意：这里刻意写成"显式两趟"而不是 for (const g of [cool, warm])，
+  // 后者每帧都会新建一个临时数组——星空是常驻 rAF，这种小分配要避免
+  function drawStarGroup(group, color, t) {
+    ctx.fillStyle = color;
+    for (let i = 0; i < group.length; i++) {
+      const s = group[i];
+      const tw = reduceMotion ? 1 : Math.sin(t * s.speed + s.phase) * 0.3 + 0.7;
+      ctx.globalAlpha = Math.max(0.05, Math.min(1, s.base * tw));
       ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.arc(s.x + parX, s.y + parY, s.r, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  function drawStars(t) {
+    drawStarGroup(cool, '#e6dcff', t);
+    drawStarGroup(warm, '#f5dfa0', t);
     ctx.globalAlpha = 1;
   }
 
+  /** 星点缓慢下落，出屏后从顶部回收（对象的 x/y 复用，不新建） */
+  function advanceStarGroup(group, dt) {
+    for (let i = 0; i < group.length; i++) {
+      const s = group[i];
+      s.y += s.drift * dt;
+      if (s.y > h + 4) { s.y = -4; s.x = Math.random() * w; }
+    }
+  }
+
+  function drawMeteors(dt) {
+    ctx.lineCap = 'round';
+    for (let i = meteors.length - 1; i >= 0; i--) {
+      const m = meteors[i];
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      m.life -= dt / 1.15;                                 // 约 1.15 秒生命
+      if (m.life <= 0 || m.y > h + 120 || m.x < -260 || m.x > w + 260) {
+        meteors.splice(i, 1);
+        continue;
+      }
+      const len = 110 * Math.min(1, m.life);               // 拖尾随生命衰减
+      const inv = 1 / Math.sqrt(m.vx * m.vx + m.vy * m.vy);
+      const nx = m.vx * inv, ny = m.vy * inv;
+      const a = m.life * 0.85;
+      const g = ctx.createLinearGradient(m.x, m.y, m.x - nx * len, m.y - ny * len);
+      g.addColorStop(0, 'rgba(255,246,220,' + a.toFixed(2) + ')');
+      g.addColorStop(1, 'rgba(255,246,220,0)');
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y);
+      ctx.lineTo(m.x - nx * len, m.y - ny * len);
+      ctx.stroke();
+    }
+  }
+
+  /** 每帧推进：星点下落 → 出屏回顶；指针视差做惯性跟随 */
   function frame(t) {
-    draw(t);
+    const dt = Math.min((t - (frame.last || t)) / 1000, 0.05);   // 秒；限幅避免切后台跳变
+    frame.last = t;
+
+    if (!reduceMotion) {
+      advanceStarGroup(cool, dt);
+      advanceStarGroup(warm, dt);
+      parX += (parTX - parX) * 0.05;
+      parY += (parTY - parY) * 0.05;
+    }
+
+    ctx.clearRect(0, 0, w, h);
+    drawStars(t);
+    if (!reduceMotion) {
+      if (meteors.length < METEOR_MAX && Math.random() < METEOR_RATE * dt) spawnMeteor();
+      drawMeteors(dt);
+    }
     requestAnimationFrame(frame);
   }
 
@@ -122,7 +220,7 @@ function initStarfield() {
     w = window.innerWidth;
     h = window.innerHeight;
     build();
-    if (reduceMotion) draw(0);   // 静态模式下重绘一帧
+    if (reduceMotion) { ctx.clearRect(0, 0, w, h); drawStars(0); }   // 静态模式下重绘一帧
   }
 
   // resize 会连续触发（拖拽窗口时每秒数十次），每次重建星群纯属浪费，防抖 150ms
@@ -130,6 +228,15 @@ function initStarfield() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(onResize, 150);
   });
+
+  // 指针视差：背景随鼠标轻微反向位移，静止画面也有层次。
+  // 幅度刻意压得很小（±10px），避免影响文字阅读。
+  if (!reduceMotion) {
+    window.addEventListener('pointermove', (e) => {
+      parTX = (e.clientX / w - 0.5) * -20;
+      parTY = (e.clientY / h - 0.5) * -20;
+    }, { passive: true });
+  }
 
   onResize();
   if (!reduceMotion) requestAnimationFrame(frame);

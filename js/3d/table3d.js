@@ -32,7 +32,9 @@ import { getSpreadPositions3d } from './spreads3d.js';
 
 const CFG = {
   /* 桌面 */
-  tableRadius: 5.0,
+  // v1.3.5 半径 5.0 → 5.5：卡位间距改为按牌的实际尺寸推导后，最大的牌阵
+  // （十二宫 4×3）最外侧牌角距圆心约 5.18，半径 5.0 会让牌角悬空出桌沿。
+  tableRadius: 5.5,
   tableThickness: 0.34,
   starCount: 520,
   starInner: 10,
@@ -49,11 +51,17 @@ const CFG = {
   deckX: 0,
   deckZ: 4.4,         // 牌堆位置（相机前方）
   hoverLift: 0.22,    // 悬停浮起高度
+  cardCorner: 0.1,    // 卡牌圆角半径（世界单位，约卡宽的 7%）
+  shadowY: 0.006,     // 卡牌投影贴附桌面的高度
   /* 魔幻符号 */
-  circleRadius: 3.55, // 桌面魔法阵半径（大于最外圈卡位，符文不被压住）
+  circleRadius: 3.9,  // 桌面魔法阵半径（随桌面放大，仍大于最外圈卡位，符文不被压住）
   circleY: 0.012,
   glowY: 0.004,
-  runeCount: 8        // 悬浮卢恩符文数量
+  runeCount: 8,       // 悬浮卢恩符文数量
+  /* 桌面浮尘粒子 */
+  moteCount: 130,     // 浮尘数量（点精灵，按帧更新位置，开销可忽略）
+  moteRise: 0.22,     // 浮尘上升速度（单位/秒）
+  moteTop: 4.2        // 浮尘升到该高度后回到底部循环
 };
 
 /* ---------- 模块状态（单例） ---------- */
@@ -61,6 +69,8 @@ let renderer = null;
 let scene = null;
 let camera = null;
 let starPoints = null;
+let motePoints = null;       // 桌面浮尘粒子
+let moteData = null;         // 浮尘的 TypedArray 状态（位置/速度/相位等）
 let container = null;
 let ro = null;
 let rafId = 0;
@@ -80,12 +90,16 @@ let hoverPending = null;     // 待处理的最新指针位置
 // 共享几何 / 材质（跨牌复用，避免重复创建）
 let planeGeo = null;
 let backMat = null;
+let cardAlphaMask = null;        // 圆角遮罩贴图（全卡共享）
+let shadowGeo = null;            // 接触投影几何（全卡共享）
+let shadowMat = null;            // 接触投影材质（全卡共享）
 const frontTexCache = new Map();   // 牌面贴图缓存：img → Texture
 
 // 魔幻符号资源
 let magicCircle = null;            // 桌面魔法阵 Mesh（缓慢自转）
 let glowDisc = null;               // 桌面光晕
 let runeSprites = [];              // 悬浮卢恩符文
+let rippleRings = [];              // 阵心向外扩散的光环
 const runeTexCache = new Map();    // 单字符文贴图缓存：runeIndex → Texture
 
 /** WebGL 能力检测（含老内核 experimental-webgl） */
@@ -109,6 +123,11 @@ function createRenderer() {
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // 色调映射：这里刻意用「直通」而不是 ACES。
+  // 实测 ACES 会把 Rider-Waite 卡面的暖白底压成灰白、明显去饱和 ——
+  // 卡面是本页的核心内容，保真优先于高光滚降；发光元素则靠自身 opacity 控制，
+  // 本来就不会过曝（v1.3.4 的直通方案已足够好看）。
+  renderer.toneMapping = THREE.NoToneMapping;
   renderer.domElement.className = 't3d-canvas';
 }
 
@@ -119,25 +138,42 @@ function createCamera() {
     container.clientWidth / container.clientHeight,
     0.1, 60
   );
-  camera.position.set(0, 8.6, 9.4);
+  // 桌面半径 5.5（比 v1.3.4 的 5.0 大 10%），相机等比后退保持构图不变
+  camera.position.set(0, 9.4, 10.3);
   camera.lookAt(0, 0, 0.2);
 }
 
 function createLights() {
   // three r155+ 默认物理光照模式（useLegacyLights=false），
   // 光照强度需按 candela 量级给值，否则场景欠曝。
-  scene.add(new THREE.AmbientLight(0x3a2a66, 1.15));
-  const key = new THREE.SpotLight(0xe8c56b, 220, 0, Math.PI / 5, 0.5);
+  // v1.3.5 追加了很弱的半球光补齐暗部、一束冷色轮廓光勾边，
+  // 但直射主光刻意保持克制 —— 卡面是暖白底（Rider-Waite），
+  // 直射光给太强会把牌面冲成一片奶白、丢掉画面细节。
+  scene.add(new THREE.AmbientLight(0x3a2a66, 1.2));
+
+  // 半球光：天空紫 / 地面深紫，只为暗部补一点层次
+  scene.add(new THREE.HemisphereLight(0x9a7cf0, 0x14082a, 0.18));
+
+  // 主光：从正上方偏前方打下来，形成卡牌与符文的主要高光
+  const key = new THREE.SpotLight(0xe8c56b, 205, 0, Math.PI / 5, 0.5);
   key.position.set(0, 12, 2);
   key.target.position.set(0, 0, 0);
   scene.add(key);
   scene.add(key.target);
-  const violet = new THREE.PointLight(0x8b6cf0, 70, 26, 1.4);
+
+  // 紫侧光 + 蓝侧光：勾出桌面圆环与卡牌侧边
+  const violet = new THREE.PointLight(0x8b6cf0, 68, 26, 1.4);
   violet.position.set(-7, 5, -7);
   scene.add(violet);
-  const violet2 = new THREE.PointLight(0x6f8bff, 45, 24, 1.4);
+  const violet2 = new THREE.PointLight(0x6f8bff, 42, 24, 1.4);
   violet2.position.set(7, 4, 6);
   scene.add(violet2);
+
+  // 背光（轮廓光）：从桌面后方低角度打来，给卡牌顶部描一条冷色边，
+  // 让牌从深色桌面里"浮"出来，而不是糊成一片（强度需克制，否则牌面会发灰）
+  const rim = new THREE.PointLight(0x9fd8ff, 26, 30, 1.3);
+  rim.position.set(0, 3.2, -9);
+  scene.add(rim);
 }
 
 /** 桌面贴图：中心偏亮的深紫径向渐变 + 细碎金屑，避免纯色显得"塑料" */
@@ -168,28 +204,87 @@ function createTableTexture() {
   return tex;
 }
 
+/** 桌侧裙边贴图：自上而下加深，底部几乎没入夜色，强化"悬浮祭坛"的体积感 */
+function createSkirtTexture() {
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, size);
+  grad.addColorStop(0, '#3a2166');
+  grad.addColorStop(0.35, '#1d0f38');
+  grad.addColorStop(1, '#080312');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  // 稀疏星屑，避免裙边是一整块死板纯色
+  for (let i = 0; i < 150; i++) {
+    g.fillStyle = 'rgba(232,197,107,' + (Math.random() * 0.15 + 0.03).toFixed(3) + ')';
+    g.beginPath();
+    g.arc(Math.random() * size, Math.random() * size, Math.random() * 1.2 + 0.3, 0, Math.PI * 2);
+    g.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 function createTable() {
-  const topGeo = new THREE.CylinderGeometry(
-    CFG.tableRadius, CFG.tableRadius * 0.985, CFG.tableThickness, 72
-  );
+  const R = CFG.tableRadius;
+
+  // 台面用正圆：CircleGeometry 的 UV 把贴图按 0~1 径向铺开，径向渐变正好落在圆心；
+  // 原来的 CylinderGeometry 顶面 UV 是圆环展开，渐变会被拉成条纹。
+  const topGeo = new THREE.CircleGeometry(R, 96);
   const topMat = new THREE.MeshStandardMaterial({
     map: createTableTexture(),
-    roughness: 0.82,
-    metalness: 0.12
+    roughness: 0.76,
+    metalness: 0.16
   });
   const top = new THREE.Mesh(topGeo, topMat);
-  top.position.y = -CFG.tableThickness / 2;
+  top.rotation.x = -Math.PI / 2;
   scene.add(top);
 
-  const ringGeo = new THREE.TorusGeometry(CFG.tableRadius + 0.05, 0.09, 12, 96);
-  const ringMat = new THREE.MeshStandardMaterial({
-    color: 0xe8c56b, emissive: 0x8a5a12, emissiveIntensity: 0.4,
-    roughness: 0.35, metalness: 0.6
+  // 裙边：开口圆柱，自上而下收窄（R → 0.93R）并加深，形成厚重台基
+  const skirtGeo = new THREE.CylinderGeometry(R, R * 0.93, CFG.tableThickness, 96, 1, true);
+  const skirtMat = new THREE.MeshStandardMaterial({
+    map: createSkirtTexture(), roughness: 0.92, metalness: 0.05,
+    side: THREE.DoubleSide
   });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.02;
-  scene.add(ring);
+  const skirt = new THREE.Mesh(skirtGeo, skirtMat);
+  skirt.position.y = -CFG.tableThickness / 2;
+  scene.add(skirt);
+
+  // 底部封盖：避免俯视以外的角度看穿台基
+  const base = new THREE.Mesh(
+    new THREE.CircleGeometry(R * 0.93, 96),
+    new THREE.MeshStandardMaterial({ color: 0x0a0518, roughness: 1 })
+  );
+  base.rotation.x = Math.PI / 2;
+  base.position.y = -CFG.tableThickness;
+  scene.add(base);
+
+  // 口沿金环（加粗）
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(R + 0.02, 0.075, 14, 128),
+    new THREE.MeshStandardMaterial({
+      color: 0xe8c56b, emissive: 0x8a5a12, emissiveIntensity: 0.55,
+      roughness: 0.3, metalness: 0.7
+    })
+  );
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.01;
+  scene.add(rim);
+
+  // 内圈细刻环：与口沿形成双描边，桌面更有"法坛"层次
+  const innerRing = new THREE.Mesh(
+    new THREE.TorusGeometry(R * 0.895, 0.013, 8, 128),
+    new THREE.MeshStandardMaterial({
+      color: 0xe8c56b, emissive: 0x5a3a08, emissiveIntensity: 0.5,
+      roughness: 0.45, metalness: 0.6
+    })
+  );
+  innerRing.rotation.x = Math.PI / 2;
+  innerRing.position.y = 0.004;
+  scene.add(innerRing);
 }
 
 function createStars() {
@@ -219,6 +314,84 @@ function createStars() {
   });
   starPoints = new THREE.Points(geo, mat);
   scene.add(starPoints);
+}
+
+/** 柔光点精灵贴图：中心亮、边缘透明的圆形光点 */
+function createMoteTexture() {
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(255,246,220,1)');
+  grad.addColorStop(0.28, 'rgba(240,205,130,0.8)');
+  grad.addColorStop(1, 'rgba(240,205,130,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+
+/**
+ * 桌面浮尘：缓慢上升的金色微粒。
+ *
+ * 牌桌静止时画面是"死"的，加一层浮尘立刻有呼吸感。
+ * 用点精灵（Points）+ 单张贴图，按帧只改 position 数组，
+ * 130 个点约 390 个 float 写入，开销可忽略；
+ * 粒子的角度/半径/相位都预存在 TypedArray 里，避免每帧新建对象。
+ */
+function createMotes() {
+  const n = CFG.moteCount;
+  const positions = new Float32Array(n * 3);
+  const speed = new Float32Array(n);
+  const phase = new Float32Array(n);
+  const angle = new Float32Array(n);
+  const radius = new Float32Array(n);
+  const baseY = new Float32Array(n);
+
+  for (let i = 0; i < n; i++) {
+    angle[i] = Math.random() * Math.PI * 2;
+    // sqrt 分布：保证在圆面积上均匀，否则粒子会往圆心堆
+    radius[i] = Math.sqrt(Math.random()) * CFG.tableRadius * 1.35;
+    baseY[i] = Math.random() * CFG.moteTop;
+    speed[i] = CFG.moteRise * (0.55 + Math.random() * 0.9);
+    phase[i] = Math.random() * Math.PI * 2;
+    positions[i * 3] = Math.cos(angle[i]) * radius[i];
+    positions[i * 3 + 1] = baseY[i];
+    positions[i * 3 + 2] = Math.sin(angle[i]) * radius[i];
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  motePoints = new THREE.Points(geo, new THREE.PointsMaterial({
+    map: createMoteTexture(),
+    size: 0.17,
+    color: 0xf5dfa0,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true
+  }));
+  motePoints.renderOrder = 3;
+  scene.add(motePoints);
+  moteData = { positions, speed, phase, angle, radius, baseY };
+}
+
+/** 浮尘动画：上升 → 到顶回底；同时叠加微小横向摆动，避免直上直下的机械感 */
+function updateMotes(dt) {
+  if (!motePoints || !moteData) return;
+  const { positions, speed, phase, angle, radius, baseY } = moteData;
+  const n = speed.length;
+  for (let i = 0; i < n; i++) {
+    baseY[i] += speed[i] * dt;
+    if (baseY[i] > CFG.moteTop) baseY[i] -= CFG.moteTop;   // 循环，不做对象回收
+    const a = angle[i] + elapsed * 0.045;                  // 整体缓慢绕轴公转
+    const sway = Math.sin(elapsed * 0.7 + phase[i]) * 0.09;
+    positions[i * 3] = Math.cos(a) * radius[i] + sway;
+    positions[i * 3 + 1] = baseY[i];
+    positions[i * 3 + 2] = Math.sin(a) * radius[i] + sway;
+  }
+  motePoints.geometry.attributes.position.needsUpdate = true;
 }
 
 /* ============================================================
@@ -435,7 +608,24 @@ function getRuneTexture(runeIndex) {
   return t;
 }
 
-/** 桌面魔法阵 + 光晕：两者都平铺在桌面上，加法混合，不写深度 */
+/** 扩散光环贴图：一圈柔边亮带（用于从阵心向外推的波纹） */
+function createRippleTexture() {
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const cx = size / 2;
+  const grad = g.createRadialGradient(cx, cx, size * 0.30, cx, cx, size * 0.5);
+  grad.addColorStop(0, 'rgba(240,205,130,0)');
+  grad.addColorStop(0.5, 'rgba(240,205,130,0.45)');
+  grad.addColorStop(0.72, 'rgba(255,238,190,0.95)');
+  grad.addColorStop(0.88, 'rgba(240,205,130,0.32)');
+  grad.addColorStop(1, 'rgba(240,205,130,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+
 function createMagicSymbols() {
   // 光晕圆盘（比桌面略大，形成"祭坛辉光"）
   const glowGeo = new THREE.PlaneGeometry(CFG.tableRadius * 2.6, CFG.tableRadius * 2.6);
@@ -467,6 +657,24 @@ function createMagicSymbols() {
   magicCircle.position.y = CFG.circleY;
   magicCircle.renderOrder = 2;
   scene.add(magicCircle);
+
+  // 扩散光环：两枚相位错开的波纹，从阵心周期性向外推出后消隐，
+  // 让静止的阵盘有"魔力在流动"的动势（阵盘自转 + 呼吸之外的第二层动效）
+  const rippleGeo = new THREE.PlaneGeometry(1, 1);
+  const rippleTex = createRippleTexture();
+  for (let i = 0; i < 2; i++) {
+    const mat = new THREE.MeshBasicMaterial({
+      map: rippleTex, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    const ring = new THREE.Mesh(rippleGeo, mat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = CFG.circleY + 0.004;
+    ring.renderOrder = 3;
+    ring.userData = { t: i * 0.5 };      // 相位错开半周期
+    scene.add(ring);
+    rippleRings.push(ring);
+  }
 
   // 悬浮符文：环绕牌桌缓慢公转 + 上下浮动 + 呼吸明暗
   for (let i = 0; i < CFG.runeCount; i++) {
@@ -500,6 +708,21 @@ function updateMagic(dt) {
   if (glowDisc) {
     glowDisc.material.opacity = 0.72 + Math.sin(elapsed * 0.6) * 0.16;
   }
+
+  // 扩散光环：t 在 0~1 之间循环，t=0.5 时最亮，随半径扩大而淡出
+  if (rippleRings.length) {
+    const period = 3.2;                       // 每 3.2 秒推出一圈
+    for (const r of rippleRings) {
+      const u = r.userData;
+      u.t += dt / period;
+      if (u.t >= 1) u.t -= 1;
+      const s = 4.0 + u.t * 10.4;             // 光环半径约 1.4 → 5.2，正好扫过整张牌桌
+      r.scale.set(s, s, 1);
+      // 加法混合叠加在发光阵盘之上，峰值必须压得很低，否则整张桌子会被冲白
+      r.material.opacity = Math.sin(u.t * Math.PI) * 0.14;
+    }
+  }
+
   for (const s of runeSprites) {
     const u = s.userData;
     u.angle += u.speed * dt;
@@ -516,48 +739,137 @@ function updateMagic(dt) {
  * P2 卡牌资源
  * ============================================================ */
 
+/** 圆角矩形路径（不依赖 ctx.roundRect，保证老内核也能画） */
+function roundRectPath(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
+/** 卡牌圆角遮罩：白色圆角矩形，作为 alphaMap 把直角平面"切"成圆角牌 */
+function createCardAlphaMask() {
+  const w = 256;
+  const h = Math.round(w * CFG.cardH / CFG.cardW);   // 与牌保持一致的长宽比
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  roundRectPath(g, 1, 1, w - 2, h - 2, Math.round(CFG.cardCorner / CFG.cardW * w));
+  g.fill();
+  const tex = new THREE.CanvasTexture(c);
+  return tex;
+}
+
+/** 接触投影贴图：中心浓、边缘柔化的椭圆，垫在牌下方制造"落地感" */
+function createShadowTexture() {
+  const pw = CFG.cardW * 1.55, ph = CFG.cardH * 1.2;
+  const w = 256, h = Math.round(w * ph / pw);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.translate(w / 2, h / 2);
+  g.scale(w / h, 1);                    // 横向压扁成椭圆，匹配牌的竖长比例
+  const grad = g.createRadialGradient(0, 0, 0, 0, 0, h / 2);
+  grad.addColorStop(0, 'rgba(0,0,0,0.62)');
+  grad.addColorStop(0.5, 'rgba(0,0,0,0.3)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(0, 0, h / 2, 0, Math.PI * 2);
+  g.fill();
+  return new THREE.CanvasTexture(c);
+}
+
 /** 卡背贴图 + 共享几何/材质（跨牌复用，避免重复创建） */
 function ensureCardShared() {
   if (planeGeo) return;
-  planeGeo = new THREE.PlaneGeometry(CFG.cardW, CFG.cardH);
+  planeGeo = new THREE.PlaneGeometry(CFG.cardW, CFG.cardH, 2, 3);
 
+  // 圆角遮罩与投影都是"每局都不变"的资源，只建一次并由全部卡牌共享
+  cardAlphaMask = createCardAlphaMask();
+  shadowGeo = new THREE.PlaneGeometry(CFG.cardW * 1.55, CFG.cardH * 1.2);
+  shadowMat = new THREE.MeshBasicMaterial({
+    map: createShadowTexture(),
+    transparent: true,
+    opacity: 1,
+    depthWrite: false
+  });
+
+  // 卡背：分辨率提到 256×448（原 128×224 在近景下边框发虚），
+  // 并补一层斜向菱格暗纹 —— 纯渐变在近处看着太空
   const c = document.createElement('canvas');
-  c.width = 128; c.height = 224;
+  c.width = 256; c.height = 448;
   const g = c.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, 0, c.height);
-  grad.addColorStop(0, '#4a2f7e');
-  grad.addColorStop(0.5, '#2b1950');
-  grad.addColorStop(1, '#3a2560');
+  const grad = g.createLinearGradient(0, 0, c.width * 0.35, c.height);
+  grad.addColorStop(0, '#412c76');
+  grad.addColorStop(0.45, '#1d1140');
+  grad.addColorStop(1, '#2c1b55');
   g.fillStyle = grad;
   g.fillRect(0, 0, c.width, c.height);
+
+  // 斜向菱格暗纹（两组平行线交叉），只在牌面内部
+  g.save();
+  g.beginPath(); g.rect(18, 18, c.width - 36, c.height - 36); g.clip();
+  g.strokeStyle = 'rgba(180,150,255,0.13)';
+  g.lineWidth = 1.4;
+  const gap = 22;
+  for (let d = -c.height; d < c.width + c.height; d += gap) {
+    g.beginPath(); g.moveTo(d, 0); g.lineTo(d + c.height, c.height); g.stroke();
+    g.beginPath(); g.moveTo(d, c.height); g.lineTo(d + c.height, 0); g.stroke();
+  }
+  g.restore();
+
+  // 双线金边
   g.strokeStyle = 'rgba(240,205,130,0.95)';
-  g.lineWidth = 5;
-  g.strokeRect(3, 3, c.width - 6, c.height - 6);
-  g.strokeStyle = 'rgba(240,205,130,0.45)';
-  g.lineWidth = 1.5;
-  g.strokeRect(8, 8, c.width - 16, c.height - 16);
-  for (let i = 0; i < 42; i++) {
-    g.fillStyle = 'rgba(240,228,255,' + (Math.random() * 0.6 + 0.3) + ')';
+  g.lineWidth = 8;
+  g.strokeRect(4, 4, c.width - 8, c.height - 8);
+  g.strokeStyle = 'rgba(240,205,130,0.4)';
+  g.lineWidth = 2;
+  g.strokeRect(14, 14, c.width - 28, c.height - 28);
+
+  for (let i = 0; i < 70; i++) {
+    g.fillStyle = 'rgba(240,228,255,' + (Math.random() * 0.6 + 0.25).toFixed(3) + ')';
     g.beginPath();
-    g.arc(Math.random() * c.width, Math.random() * c.height, Math.random() * 1.2 + 0.3, 0, Math.PI * 2);
+    g.arc(Math.random() * c.width, Math.random() * c.height, Math.random() * 1.4 + 0.3, 0, Math.PI * 2);
     g.fill();
   }
-  // 卡背中心：一圈符文 + 星点，呼应桌面魔法阵
-  g.strokeStyle = 'rgba(232,197,107,0.75)';
-  g.lineWidth = 1.5;
-  g.beginPath(); g.arc(c.width / 2, c.height / 2, 16, 0, Math.PI * 2); g.stroke();
-  g.beginPath(); g.arc(c.width / 2, c.height / 2, 9, 0, Math.PI * 2); g.stroke();
-  g.fillStyle = 'rgba(250,230,170,0.95)';
-  g.beginPath(); g.arc(c.width / 2 - 3, c.height / 2 - 2, 4, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = 'rgba(232,197,107,0.6)';
+
+  // 卡背中心：同心圆 + 八向光芒 + 星点，呼应桌面魔法阵
+  const cx = c.width / 2, cy = c.height / 2;
+  g.strokeStyle = 'rgba(232,197,107,0.8)';
+  g.lineWidth = 3;
+  g.beginPath(); g.arc(cx, cy, 44, 0, Math.PI * 2); g.stroke();
   g.lineWidth = 2;
-  drawRune(g, 20, c.width / 2, c.height * 0.78, 26, 2);   // ᛚ Laguz：水之流，寓意直觉
+  g.beginPath(); g.arc(cx, cy, 30, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = 1.4;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    g.beginPath();
+    g.moveTo(cx + Math.cos(a) * 32, cy + Math.sin(a) * 32);
+    g.lineTo(cx + Math.cos(a) * 42, cy + Math.sin(a) * 42);
+    g.stroke();
+  }
+  g.fillStyle = 'rgba(250,230,170,0.95)';
+  g.beginPath(); g.arc(cx, cy, 8, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(255,245,215,0.9)';
+  g.beginPath(); g.arc(cx - 3, cy - 3, 3.4, 0, Math.PI * 2); g.fill();
+  // 上/下各一枚符文，与桌面符文环呼应
+  g.strokeStyle = 'rgba(232,197,107,0.62)';
+  g.lineWidth = 3;
+  drawRune(g, 20, cx, c.height * 0.79, 40, 3);   // ᛚ Laguz：水之流，寓意直觉
+  drawRune(g, 2, cx, c.height * 0.21, 34, 3);    // ᚦ Thurisaz
 
   const backTex = new THREE.CanvasTexture(c);
   backTex.colorSpace = THREE.SRGBColorSpace;
+  backTex.anisotropy = 4;
   backMat = new THREE.MeshStandardMaterial({
-    map: backTex, roughness: 0.75, metalness: 0.08,
-    emissive: 0x2a1650, emissiveIntensity: 0.7   // 微自发光，让卡牌从桌面浮现
+    map: backTex, roughness: 0.7, metalness: 0.06,
+    emissive: 0x241344, emissiveIntensity: 0.28,  // 微自发光：只让牌从台面"浮"起一点，不能反客为主
+    alphaMap: cardAlphaMask, alphaTest: 0.5       // 圆角：alphaMap + alphaTest 裁掉直角
   });
 }
 
@@ -595,8 +907,10 @@ function placeCards(spread, draw) {
     // 正面（初始朝下）：normal -y；翻转后朝上
     const frontMat = new THREE.MeshStandardMaterial({
       map: getFrontTexture(d.card.img),
+      // 牌面按"印刷纸卡"处理：中等粗糙度 + 低金属度，强高光会把画面洗白
       roughness: 0.6,
-      metalness: 0.08
+      metalness: 0.08,
+      alphaMap: cardAlphaMask, alphaTest: 0.5
     });
     const frontMesh = new THREE.Mesh(planeGeo, frontMat);
     frontMesh.rotation.x = Math.PI;
@@ -608,10 +922,17 @@ function placeCards(spread, draw) {
     flipper.add(frontMesh);
     group.add(flipper);
 
+    // 接触投影：挂在 group 上（不随 flipper 翻转，牌翻面时投影不动），
+    // 每帧把它的 localZ 校正到「世界高度 = CFG.shadowY」，使其始终贴在桌面而不是跟着浮起
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    shadow.visible = false;         // 落牌完成前不显示，避免影子先于牌出现
+    group.add(shadow);
+
     const card = {
       group,
       flipper,
       frontMesh,                          // 仅用于卸载时释放其独占材质
+      shadow,
       hitMeshes: [backMesh, frontMesh],   // 射线拾取用
       index: i,
       slot: { x: s.x, z: s.z, y: s.y !== undefined ? s.y : CFG.cardY, rotY: s.rotY || 0 },
@@ -826,9 +1147,19 @@ function loop() {
     c.hoverY += (target - c.hoverY) * 0.18;
     if (Math.abs(c.hoverY) < 0.0004) c.hoverY = 0;
     if (c.dealt && !c.animating) c.group.position.y = c.slot.y + c.hoverY;
+
+    // 接触投影：始终贴桌面，并随浮起高度略微放大（模拟光斑扩散、影子变淡的观感）
+    if (c.shadow) {
+      c.shadow.visible = c.dealt;
+      if (c.dealt) {
+        c.shadow.position.z = CFG.shadowY - c.group.position.y;
+        c.shadow.scale.setScalar(1 + (c.hoverY / CFG.hoverLift) * 0.16);
+      }
+    }
   }
 
   updateMagic(dt);
+  updateMotes(dt);
   if (starPoints) starPoints.rotation.y += dt * 0.02;
   renderer.render(scene, camera);
 }
@@ -876,6 +1207,7 @@ export function mount(el) {
   createLights();
   createTable();
   createStars();
+  createMotes();
   createMagicSymbols();
   ensureCardShared();
 
@@ -930,8 +1262,12 @@ export function unmount() {
   }
 
   // 释放共享卡牌资源
+  // （卡组已由 clearCards 移出场景，因此 scene.traverse 走不到它们，这里必须显式释放）
   if (planeGeo) { planeGeo.dispose(); planeGeo = null; }
   if (backMat) { if (backMat.map) backMat.map.dispose(); backMat.dispose(); backMat = null; }
+  if (cardAlphaMask) { cardAlphaMask.dispose(); cardAlphaMask = null; }
+  if (shadowGeo) { shadowGeo.dispose(); shadowGeo = null; }
+  if (shadowMat) { if (shadowMat.map) shadowMat.map.dispose(); shadowMat.dispose(); shadowMat = null; }
   for (const [, t] of frontTexCache) t.dispose();
   frontTexCache.clear();
 
@@ -939,6 +1275,8 @@ export function unmount() {
   magicCircle = null;
   glowDisc = null;
   runeSprites.length = 0;
+  // 扩散光环挂在场景里，geometry/material/map 已由 scene.traverse 释放，这里只清引用
+  rippleRings.length = 0;
   for (const [, t] of runeTexCache) t.dispose();
   runeTexCache.clear();
 
@@ -958,6 +1296,10 @@ export function unmount() {
 
   camera = null;
   starPoints = null;
+  // 浮尘挂在场景里，geometry / material / map 已由上面的 scene.traverse 释放，
+  // 这里只需丢掉引用，避免下一局误用旧数据
+  motePoints = null;
+  moteData = null;
   clock = null;
   if (container) { container.innerHTML = ''; container = null; }
 }

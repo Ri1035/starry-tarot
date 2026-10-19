@@ -7,11 +7,19 @@
  *   z = 纵深（-z 为远处/屏幕上方，+z 为近处/屏幕下方）
  *   y = 高度（卡牌平铺在桌面 y≈0.03）
  *   rotY = 绕竖直轴偏转（弧度），用于轻微错落与凯尔特十字横置牌
+ *
+ * ⚠️ v1.3.5 起卡位间距按「卡牌实际尺寸」推导，不再靠经验取值：
+ *    卡牌 1.4(宽) × 2.35(高)，因此横向间距必须 ≥ 1.4、纵向间距必须 ≥ 2.35，
+ *    否则相邻牌会在桌面上互相压盖（旧坐标用的是 0.9~1.6，重叠非常明显）。
  * 新增布局只需在 switch 中补一个分支（或复用 row/grid 助手）。
  * ============================================================ */
 
-const GX = 1.5;   // 横向卡位间距
-const GZ = 1.5;   // 纵向卡位间距
+const CARD_W = 1.4;      // 与 table3d.js 的 CFG.cardW 保持一致
+const CARD_H = 2.35;     // 与 table3d.js 的 CFG.cardH 保持一致
+const GX = CARD_W + 0.5;    // 横向卡位间距 1.90（留 0.5 间隙）
+const GZ = CARD_H + 0.25;   // 纵向卡位间距 2.60（留 0.25 间隙，再大最外侧牌角会出桌沿）
+const HALF_GX = GX / 2;
+const HALF_GZ = GZ / 2;
 
 /** 横向一行（n 张居中排列） */
 function rowLayout(n, z = 0) {
@@ -20,12 +28,15 @@ function rowLayout(n, z = 0) {
   return arr;
 }
 
-/** cols×rows 网格（按 positions 顺序先行后列填充） */
+/** cols×rows 网格（按 positions 顺序先行后列填充），整体居中于 (x0, z0) */
 function gridLayout(cols, rows, { x0 = 0, z0 = 0, gx = GX, gz = GZ } = {}) {
   const arr = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      arr.push({ x: x0 + c * gx, z: z0 + r * gz });
+      arr.push({
+        x: x0 + (c - (cols - 1) / 2) * gx,
+        z: z0 + (r - (rows - 1) / 2) * gz
+      });
     }
   }
   return arr;
@@ -45,71 +56,88 @@ export function getSpreadPositions3d(spread) {
       slots = rowLayout(n);
       break;
 
-    case 'grid2':
-      slots = gridLayout(2, 2, { x0: -0.75, z0: -0.8, gx: 1.5, gz: 1.6 });
+    case 'grid2':                                     // 2×2
+      slots = gridLayout(2, 2);
       break;
 
     case 'triangle':
       // [0]现状 [1]挑战 在下排；[2]结果 在上排
-      slots = [{ x: -0.85, z: 0.95 }, { x: 0.85, z: 0.95 }, { x: 0, z: -0.95 }];
+      slots = [
+        { x: -HALF_GX, z: HALF_GZ }, { x: HALF_GX, z: HALF_GZ },
+        { x: 0, z: -HALF_GZ }
+      ];
       break;
 
-    case 'hex':
-      slots = gridLayout(3, 2, { x0: -1.5, z0: -0.8, gx: 1.5, gz: 1.6 });
+    case 'hex':                                       // 3×2
+      slots = gridLayout(3, 2);
       break;
 
     case 'year':
-    case 'zodiac':
-      slots = gridLayout(4, 3, { x0: -2.25, z0: -1.5, gx: 1.5, gz: 1.5 });
+    case 'zodiac':                                    // 4×3
+      slots = gridLayout(4, 3);
       break;
 
     case 'columns':
-      // 灵感对应(6)：左右各 3；二选一(5)：顶部 1 + 左右各 2
       if (n === 6) {
+        // 灵感对应：左 3 / 右 3，两列各占一栏
         slots = [
-          { x: -1.7, z: -1.0 }, { x: -1.7, z: 0 }, { x: -1.7, z: 1.0 },
-          { x: 1.7, z: -1.0 }, { x: 1.7, z: 0 }, { x: 1.7, z: 1.0 }
+          { x: -1.6, z: -GZ }, { x: -1.6, z: 0 }, { x: -1.6, z: GZ },
+          { x: 1.6, z: -GZ }, { x: 1.6, z: 0 }, { x: 1.6, z: GZ }
         ];
       } else if (n === 5) {
+        // 二选一：顶部 1 张总览，下方左右各 2 张
         slots = [
-          { x: 0, z: -1.4 },
-          { x: -1.7, z: 0.15 }, { x: -1.7, z: 1.55 },
-          { x: 1.7, z: 0.15 }, { x: 1.7, z: 1.55 }
+          { x: 0, z: -GZ },
+          { x: -1.6, z: 0 }, { x: -1.6, z: GZ },
+          { x: 1.6, z: 0 }, { x: 1.6, z: GZ }
         ];
       } else {
-        slots = gridLayout(2, Math.ceil(n / 2), { x0: -0.75, z0: -0.75, gx: 1.5, gz: 1.5 });
+        slots = gridLayout(2, Math.ceil(n / 2));
       }
       break;
 
     case 'pyramid':
       // 1-2-1：顶部[0]；中层[1][2]；底部[3]
-      slots = [{ x: 0, z: -1.2 }, { x: -0.85, z: 0 }, { x: 0.85, z: 0 }, { x: 0, z: 1.2 }];
+      slots = [
+        { x: 0, z: -GZ },
+        { x: -HALF_GX, z: 0 }, { x: HALF_GX, z: 0 },
+        { x: 0, z: GZ }
+      ];
       break;
 
     case 'cross5':
       // [0]中心 [1]右 [2]左 [3]下 [4]上
-      slots = [{ x: 0, z: 0 }, { x: 0.95, z: 0 }, { x: -0.95, z: 0 }, { x: 0, z: 0.95 }, { x: 0, z: -0.95 }];
+      slots = [
+        { x: 0, z: 0 },
+        { x: GX, z: 0 }, { x: -GX, z: 0 },
+        { x: 0, z: GZ }, { x: 0, z: -GZ }
+      ];
       break;
 
     case 'horseshoe':
       // U 形：左列下→底部→右列上
       slots = [
-        { x: -2.4, z: -1.6 }, { x: -2.4, z: 0 }, { x: -2.4, z: 1.6 },
-        { x: 0, z: 1.6 },
-        { x: 2.4, z: 1.6 }, { x: 2.4, z: 0 }, { x: 2.4, z: -1.6 }
+        { x: -2.5, z: -GZ }, { x: -2.5, z: 0 }, { x: -2.5, z: GZ },
+        { x: 0, z: GZ },
+        { x: 2.5, z: GZ }, { x: 2.5, z: 0 }, { x: 2.5, z: -GZ }
       ];
       break;
 
     case 'celtic':
-      // 十字（前6张）+ 柱列（后4张）；[1]挑战 横置叠于[0]中心之上
+      // 十字（前 6 张）整体左移，右侧留给柱列（后 4 张）
+      // [1]挑战 横置叠于 [0]中心之上；柱列 4 张纵向略叠（间距 2.15 < 牌高 2.35），
+      // 并逐张抬高 0.016，读作"一沓牌"而不是平面穿模
       slots = [
-        { x: 0, z: 0, y: 0.03 },
-        { x: 0, z: 0, y: 0.06, rotY: Math.PI / 2 },
-        { x: 0, z: 0.95 },
-        { x: -0.95, z: 0 },
-        { x: 0, z: -0.95 },
-        { x: 0.95, z: 0 },
-        { x: 1.7, z: -1.35 }, { x: 1.7, z: -0.45 }, { x: 1.7, z: 0.45 }, { x: 1.7, z: 1.35 }
+        { x: -1.7, z: 0 },
+        { x: -1.7, z: 0, y: 0.062, rotY: Math.PI / 2 },
+        { x: -1.7, z: GZ },                                   // 基础（下）
+        { x: -1.7 - GX, z: 0 },                               // 过去（左）
+        { x: -1.7, z: -GZ },                                  // 目标（上）
+        { x: -1.7 + GX, z: 0 },                               // 未来（右）
+        { x: 2.5, z: -3.225, y: 0.030 },
+        { x: 2.5, z: -1.075, y: 0.046 },
+        { x: 2.5, z: 1.075, y: 0.062 },
+        { x: 2.5, z: 3.225, y: 0.078 }
       ];
       break;
 
