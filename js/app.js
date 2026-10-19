@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.3.5';
+const APP_VERSION = '1.3.6';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 // 魔力源声明：按用户要求注明「魔力来自互联网」，并声明开发者不受反噬与诅咒
@@ -26,7 +26,7 @@ const state = {
   draw: [],              // 当前抽牌结果 [{ card, orientation }]
   shuffled: false,       // 是否已完成洗牌
   flippedCount: 0,       // 已翻开张数
-  readingDone: false     // 是否已生成完整解读
+  allRevealed: false     // 是否已全部翻开（此后停留牌面，由用户点「解读」再跳转）
 };
 
 let spreadFilter = 'all'; // 牌阵列表当前筛选分类
@@ -281,8 +281,9 @@ function showView(name) {
   if (leaving3d && window.Tarot3D) window.Tarot3D.unmount();
   // 进入 3D 牌桌：按需加载 3D 模块后再挂载（WebGL 画布需要真实尺寸）
   if (name === '3d') {
-    // 每次进入都先收起「全部翻开」：等落牌全部就位（tarot:alldealt）才重新露出
+    // 每次进入都收起「全部翻开」与「解读」：等落牌全部就位（tarot:alldealt）才重新露出
     $('#btn-3d-flip-all').classList.add('hidden');
+    $('#btn-3d-to-reading').classList.add('hidden');
     requestAnimationFrame(() => {
       ensureTarot3D().then((ok) => {
         if (currentView !== '3d') return;   // 加载期间用户已切走，不再挂载
@@ -597,11 +598,12 @@ function startDraw(spread) {
   state.draw = drawCards(spread);
   state.shuffled = false;
   state.flippedCount = 0;
-  state.readingDone = false;
+  state.allRevealed = false;
 
   $('#draw-title').textContent = spread.name;
   $('#draw-desc').textContent = spread.desc;
   $('#btn-flip-all').classList.add('hidden');
+  $('#btn-to-reading').classList.add('hidden');   // 重开一局：收起上一局的「解读」
   $('#btn-redeal').disabled = true;   // 洗牌未完成前禁止重开
 
   renderDrawLayout();
@@ -615,7 +617,9 @@ function start3dReading(spread) {
   state.draw = drawCards(spread);
   state.shuffled = true;   // 3D 落牌即视为洗牌完成
   state.flippedCount = 0;
-  state.readingDone = false;
+  state.allRevealed = false;
+  // 重开一局：收起上一局的「解读」（此处不经过 showView，需单独复位）
+  $('#btn-3d-to-reading').classList.add('hidden');
 
   // 落牌依赖按需加载的 3D 模块：等待就绪后再落牌
   // （正常路径下进入 3D 视图时已加载完成，此处是并发点击时的兜底）
@@ -884,7 +888,7 @@ function autoShuffle() {
 /** 洗牌动画：让所有卡牌跳动旋转约 1.2 秒后落定 */
 function doShuffle() {
   autoShuffleTimer = null;
-  if (state.shuffled || state.readingDone) return;
+  if (state.shuffled || state.allRevealed) return;
   const layout = $('#card-layout');
   if (!layout) return;
   const btnRedeal = $('#btn-redeal');
@@ -894,7 +898,7 @@ function doShuffle() {
   shuffleJumpTimer = setTimeout(() => {
     shuffleJumpTimer = null;
     layout.classList.remove('shuffling');
-    if (state.readingDone) return;      // 洗牌期间已完成解读，不再改动界面
+    if (state.allRevealed) return;      // 洗牌期间已完成解读，不再改动界面
     state.shuffled = true;
     if (btnRedeal) btnRedeal.disabled = false;
     $('#btn-flip-all').classList.remove('hidden');
@@ -976,15 +980,38 @@ function flipAll() {
   });
 }
 
-/** 全部翻完后自动进入解读视图 */
-function checkAllFlipped() {
-  if (state.flippedCount >= state.spread.count && !state.readingDone) {
-    state.readingDone = true;
-    setTimeout(() => {
-      renderReading();
-      showView('reading');
-    }, 700);
+/**
+ * 全部牌已翻开：**不再自动跳转到解读**，改为停留在牌面上、亮出「解读」按钮。
+ *
+ * v1.3.6 之前是翻完 700ms 后直接把用户拽进解读视图，用户来不及看清自己翻出的牌面；
+ * 现在把节奏交给用户——想看解读再点，想多看会儿牌就停在这里。
+ * 只在当前所在视图（2D 抽牌 / 3D 牌桌）亮对应按钮，避免另一套按钮被提前点亮。
+ */
+function revealReadingButton() {
+  state.allRevealed = true;
+  if (currentView === '3d') {
+    $('#btn-3d-flip-all').classList.add('hidden');
+    $('#btn-3d-to-reading').classList.remove('hidden');
+  } else {
+    $('#btn-flip-all').classList.add('hidden');
+    $('#btn-to-reading').classList.remove('hidden');
   }
+  showToast('牌已全部翻开 ✦ 点「解读」查看结果');
+}
+
+/** 全部翻完后检查是否该亮出「解读」按钮 */
+function checkAllFlipped() {
+  if (state.flippedCount >= state.spread.count && !state.allRevealed) {
+    // 稍等一拍再亮按钮，让最后一张牌的翻转动画走完，避免按钮在动画中途弹出
+    setTimeout(revealReadingButton, 700);
+  }
+}
+
+/** 从牌面进入解读视图（2D / 3D 共用） */
+function gotoReading() {
+  if (!state.spread || !state.allRevealed) return;
+  renderReading();
+  showView('reading');
 }
 
 /* ---------- 7. 解读结果 ---------- */
@@ -1221,22 +1248,19 @@ function initEvents() {
   $('#btn-3d-back').addEventListener('click', () => showView('home'));
   $('#btn-3d-spreads').addEventListener('click', () => { renderSpreadList(spreadFilter); openModal('modal-spreads'); });
   $('#btn-3d-flip-all').addEventListener('click', () => { if (window.Tarot3D) window.Tarot3D.flipAll(); });
+  $('#btn-3d-to-reading').addEventListener('click', gotoReading);
   // 3D 全部卡牌落位：此刻「全部翻开」才真正可用（flipAllCards 会跳过未落位的牌）
   window.addEventListener('tarot:alldealt', () => {
-    if (currentView === '3d' && !state.readingDone && !state.flippedCount) {
+    if (currentView === '3d' && !state.allRevealed && !state.flippedCount) {
       $('#btn-3d-flip-all').classList.remove('hidden');
     }
   });
-  // 3D 每翻开一张：计数，全部翻开后复用解读逻辑
+  // 3D 每翻开一张：计数，全部翻开后亮出「解读」按钮（不再自动跳转）
   window.addEventListener('tarot:flip3d', () => {
     state.flippedCount += 1;
-    if (state.flippedCount >= state.spread.count && !state.readingDone) {
-      state.readingDone = true;
-      $('#btn-3d-flip-all').classList.add('hidden');
-      setTimeout(() => {
-        renderReading();
-        showView('reading');
-      }, 700);
+    if (state.flippedCount >= state.spread.count && !state.allRevealed) {
+      // 该事件是 table3d 在翻牌动画**结束时**派发的，所以这里只需很短的一拍
+      setTimeout(revealReadingButton, 250);
     }
   });
 
@@ -1270,6 +1294,8 @@ function initEvents() {
   // 「重新占卜」= 重新抽牌（startDraw 内部会自动洗牌），不需要再单独点一次洗牌
   $('#btn-redeal').addEventListener('click', () => { if (state.spread) startDraw(state.spread); });
   $('#btn-flip-all').addEventListener('click', flipAll);
+  // 「解读」：全部翻开后由用户主动触发，进入解读视图（2D / 3D 共用同一处理）
+  $('#btn-to-reading').addEventListener('click', gotoReading);
   $('#card-layout').addEventListener('click', (e) => {
     const card = e.target.closest('.tarot-card');
     if (card) flipCard(card);
