@@ -49,7 +49,14 @@
 - [x] Puppeteer 回归：2D 自动洗牌→翻牌→解读、再抽一次、3D 落牌→左右翻→解读、
       离开视图资源释放、重新进入可挂载；0 控制台错误
 - [x] 截图核对：桌面无雾、金环有高光、魔法阵锐利、卡背可辨、单张构图推近
-- [ ] 提交 / tag / 推送 / 部署
+- [x] 提交 / tag / 推送 / 部署
+
+### 部署记录
+- 2026-11-18：Cloudflare Pages `starry-tarot` production `67f56ea7`（暂存目录部署，
+  排除 docs/.uploads/.wrangler/.git）；GitHub `main` + tag `v1.3.7` 已推送
+- 线上验证：徽标 v1.3.7、`window.Tarot3D` 加载、3D 画布挂载、提示「固定视角 · 点击卡牌左右翻牌」、0 控制台错误
+- 部署环境备忘：npm 镜像 `npmmirror` 缺少 wrangler 4 所需的最新 `workerd` 版本，
+  改用 `wrangler@3.90.0`（安装在 /tmp 独立目录）可正常直传
 
 ### 技术备忘
 - 软件 WebGL（SwiftShader）在本机约 2fps，且 `dt` 被钳制在 50ms，
