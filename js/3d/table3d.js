@@ -69,6 +69,8 @@ let renderer = null;
 let scene = null;
 let camera = null;
 let starPoints = null;
+let starMat = null;           // 星点 ShaderMaterial（逐星闪烁）
+let tableRimMat = null;       // 口沿金环材质（呼吸发光）
 let motePoints = null;       // 桌面浮尘粒子
 let moteData = null;         // 浮尘的 TypedArray 状态（位置/速度/相位等）
 let container = null;
@@ -96,6 +98,8 @@ let backMat = null;
 let cardAlphaMask = null;        // 圆角遮罩贴图（全卡共享）
 let shadowGeo = null;            // 接触投影几何（全卡共享）
 let shadowMat = null;            // 接触投影材质（全卡共享）
+let cardGlowGeo = null;          // 卡牌辉光几何（v1.5.3）
+let cardGlowBaseMat = null;      // 卡牌辉光基础材质（每张牌 clone，独立控制透明度）
 const frontTexCache = new Map();   // 牌面贴图缓存：img → Texture
 
 // 魔幻符号资源
@@ -345,12 +349,13 @@ function createTable() {
   scene.add(base);
 
   // 口沿金环（加粗）
+  tableRimMat = new THREE.MeshStandardMaterial({
+    color: 0xe8c56b, emissive: 0x8a5a12, emissiveIntensity: 0.55,
+    roughness: 0.28, metalness: 0.9, envMapIntensity: 1.25
+  });
   const rim = new THREE.Mesh(
     new THREE.TorusGeometry(R + 0.02, 0.075, 14, 128),
-    new THREE.MeshStandardMaterial({
-      color: 0xe8c56b, emissive: 0x8a5a12, emissiveIntensity: 0.55,
-      roughness: 0.28, metalness: 0.9, envMapIntensity: 1.25
-    })
+    tableRimMat
   );
   rim.rotation.x = Math.PI / 2;
   rim.position.y = 0.01;
@@ -385,6 +390,7 @@ function createStars() {
   const count = CFG.starCount;
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
   const palette = [new THREE.Color(0xf5dfa0), new THREE.Color(0xe6dcff), new THREE.Color(0x8b6cf0)];
   const tmp = new THREE.Color();
   for (let i = 0; i < count; i++) {
@@ -398,22 +404,55 @@ function createStars() {
     colors[i * 3] = tmp.r;
     colors[i * 3 + 1] = tmp.g;
     colors[i * 3 + 2] = tmp.b;
+    phases[i] = Math.random() * Math.PI * 2;   // 每颗星独立的闪烁相位
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const mat = new THREE.PointsMaterial({
-    size: 0.13,
-    map: createStarTexture(),   // v1.3.7：圆形柔光贴图，消除默认方形点精灵
-    vertexColors: true,
+  geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+
+  // v1.5.3：逐星闪烁 —— 用极轻量的 ShaderMaterial 给每颗星独立的相位，
+  // 避免整片星空同步呼吸（那样看起来像一张在闪的贴纸）。
+  starMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uSize: { value: 0.145 },
+      uPixelRatio: { value: renderer.getPixelRatio() },
+      uMap: { value: createStarTexture() }
+    },
     transparent: true,
-    opacity: 0.95,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    sizeAttenuation: true,
-    alphaTest: 0.01
+    vertexShader: `
+      attribute vec3 color;
+      attribute float phase;
+      varying vec3 vColor;
+      varying float vAlpha;
+      uniform float uTime;
+      uniform float uSize;
+      uniform float uPixelRatio;
+      void main() {
+        vColor = color;
+        vAlpha = 0.30 + 0.70 * (0.5 + 0.5 * sin(uTime * 1.9 + phase));
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = uSize * uPixelRatio * (600.0 / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vColor;
+      varying float vAlpha;
+      uniform sampler2D uMap;
+      void main() {
+        vec4 tex = texture2D(uMap, gl_PointCoord);
+        float a = tex.a * vAlpha;
+        if (a < 0.01) discard;
+        gl_FragColor = vec4(vColor, a);
+      }
+    `
   });
-  starPoints = new THREE.Points(geo, mat);
+
+  starPoints = new THREE.Points(geo, starMat);
   scene.add(starPoints);
 }
 
@@ -907,6 +946,23 @@ function createShadowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+/** 卡牌辉光贴图：柔和的金色径向光斑（128²，全卡共享） */
+function createCardGlowTexture() {
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(255,232,170,0.9)');
+  grad.addColorStop(0.42, 'rgba(232,197,107,0.32)');
+  grad.addColorStop(1, 'rgba(232,197,107,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 /** 卡背贴图 + 共享几何/材质（跨牌复用，避免重复创建） */
 function ensureCardShared() {
   if (planeGeo) return;
@@ -920,6 +976,17 @@ function ensureCardShared() {
     transparent: true,
     opacity: 1,
     depthWrite: false
+  });
+
+  // v1.5.3 卡牌辉光：悬停 / 翻牌时在牌下晕开一圈金光（每张牌独立材质才能独立淡入淡出）
+  cardGlowGeo = new THREE.PlaneGeometry(CFG.cardW * 2.1, CFG.cardH * 1.45);
+  cardGlowBaseMat = new THREE.MeshBasicMaterial({
+    map: createCardGlowTexture(),
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
   });
 
   // 卡背：分辨率提到 256×448（原 128×224 在近景下边框发虚），
@@ -1077,8 +1144,24 @@ function placeCards(spread, draw) {
       dealt: false,
       animating: false,
       cardScale: cardScale,
-      hoverY: 0
+      hoverY: 0,
+      glow: null,
+      glowMat: null,
+      glowLevel: 0
     };
+
+    // v1.5.3 卡牌辉光：贴在桌面（不随卡牌抬起），悬停/翻牌时淡入并轻微呼吸
+    const glowMat = cardGlowBaseMat.clone();
+    glowMat.opacity = 0;
+    const glow = new THREE.Mesh(cardGlowGeo, glowMat);
+    glow.rotation.x = -Math.PI / 2;
+    glow.rotation.z = card.slot.rotY;
+    glow.position.set(card.slot.x, 0.0105, card.slot.z);
+    glow.scale.setScalar(cardScale);
+    glow.renderOrder = 2;
+    scene.add(glow);
+    card.glow = glow;
+    card.glowMat = glowMat;
 
     // 从牌堆飞向卡位（背面朝上）
     group.position.set(CFG.deckX, CFG.dealHeight, CFG.deckZ);
@@ -1101,6 +1184,8 @@ function placeCards(spread, draw) {
 function clearCards() {
   for (const c of cards) {
     scene.remove(c.group);
+    if (c.glow) scene.remove(c.glow);
+    if (c.glowMat) c.glowMat.dispose();   // 克隆材质独占；map 为共享资源，不在此释放
     c.frontMesh.material.dispose();   // 牌面材质为单张独占；几何与卡背材质是共享资源，此处不动
   }
   cards.length = 0;
@@ -1296,11 +1381,23 @@ function loop() {
         c.shadow.scale.setScalar(1 + (c.hoverY / CFG.hoverLift) * 0.16);
       }
     }
+
+    // v1.5.3 卡牌辉光：悬停 / 翻牌时增强，平时保留一层很淡的底光
+    if (c.glowMat) {
+      const gTarget = (c === hoverCard) ? 0.55 : (c.animating ? 0.5 : 0.10);
+      c.glowLevel += (gTarget - c.glowLevel) * 0.14;
+      c.glowMat.opacity = c.glowLevel * (0.82 + 0.18 * Math.sin(elapsed * 2.2 + c.index));
+    }
   }
 
   updateMagic(dt);
   updateMotes(dt);
   if (starPoints) starPoints.rotation.y += dt * 0.02;
+
+  // v1.5.3 发光 / 闪烁：逐星时间、金环呼吸、卡背微光
+  if (starMat) starMat.uniforms.uTime.value = elapsed;
+  if (tableRimMat) tableRimMat.emissiveIntensity = 0.5 + 0.18 * Math.sin(elapsed * 1.2);
+  if (backMat) backMat.emissiveIntensity = 0.36 + 0.1 * Math.sin(elapsed * 1.6);
 
   // 相机距离平滑过渡（只改远近，不改朝向）
   if (Math.abs(camScaleTarget - camScale) > 0.0004) {
@@ -1321,6 +1418,7 @@ function onResize() {
   renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  if (starMat) starMat.uniforms.uPixelRatio.value = renderer.getPixelRatio();
 }
 
 /* ---------- WebGL 降级 ---------- */
@@ -1420,6 +1518,12 @@ export function unmount() {
   if (cardAlphaMask) { cardAlphaMask.dispose(); cardAlphaMask = null; }
   if (shadowGeo) { shadowGeo.dispose(); shadowGeo = null; }
   if (shadowMat) { if (shadowMat.map) shadowMat.map.dispose(); shadowMat.dispose(); shadowMat = null; }
+  if (cardGlowGeo) { cardGlowGeo.dispose(); cardGlowGeo = null; }
+  if (cardGlowBaseMat) {
+    if (cardGlowBaseMat.map) cardGlowBaseMat.map.dispose();
+    cardGlowBaseMat.dispose();
+    cardGlowBaseMat = null;
+  }
   for (const [, t] of frontTexCache) t.dispose();
   frontTexCache.clear();
 
@@ -1437,6 +1541,12 @@ export function unmount() {
   pointerDown = null;
   camScale = 1;            // 复位构图，下次挂载从全景开始
   camScaleTarget = 1;
+  // ShaderMaterial 的贴图在 uniforms 里，scene.traverse 的通用释放扫不到，需单独释放
+  if (starMat) {
+    if (starMat.uniforms.uMap && starMat.uniforms.uMap.value) starMat.uniforms.uMap.value.dispose();
+    starMat = null;
+  }
+  tableRimMat = null;
   cancelAnimationFrame(hoverRaf); hoverRaf = 0; hoverPending = null;
   texLoader = null;
 

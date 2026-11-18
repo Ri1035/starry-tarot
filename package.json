@@ -1,7 +1,7 @@
 {
   "name": "starry-tarot",
   "private": true,
-  "version": "1.5.2",
+  "version": "1.5.3",
   "type": "module",
   "description": "星穹塔罗 · 纯前端塔罗占卜（无构建、无后端）",
   "scripts": {

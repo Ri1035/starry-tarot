@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.5.3';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 // 魔力源声明：按用户要求注明「魔力来自互联网」，并声明开发者不受反噬与诅咒
@@ -1162,37 +1162,33 @@ function gotoReading() {
 
 /* ---------- 7. 解读结果 ---------- */
 
-/** 把一条逐位解读渲染成文章节点（引擎与降级路径共用） */
-function buildReadingItem(s) {
-  const item = document.createElement('article');
+/** 把一条逐位解读渲染成可折叠卡片（v1.5.3：长牌阵默认收起，减少滚动） */
+function buildReadingItem(s, open) {
+  const item = document.createElement('details');
   item.className = 'reading-item';
+  if (open) item.open = true;
 
-  const img = document.createElement('img');
-  img.src = 'assets/cards/' + s.img;
-  img.alt = s.name;
-  if (s.orientation === 'reversed') img.classList.add('is-reversed');
+  const summary = document.createElement('summary');
+  summary.className = 'reading-summary';
+  summary.innerHTML =
+    `<img class="r-thumb${s.orientation === 'reversed' ? ' is-reversed' : ''}" src="assets/cards/${s.img}" alt="${s.name}" loading="lazy" />
+     <span class="r-sum-main">
+       <span class="r-sum-top">
+         <span class="r-pos">${s.label}</span>
+         <span class="r-orient ${s.orientation}">${s.orientationLabel}</span>
+       </span>
+       <span class="r-sum-name">${s.name}<span class="r-en">${s.nameEn}</span></span>
+       <span class="r-sum-hint">${s.meaning}</span>
+     </span>
+     <span class="r-chevron" aria-hidden="true">⌄</span>`;
+  item.appendChild(summary);
 
   const body = document.createElement('div');
   body.className = 'reading-body';
 
-  const head = document.createElement('div');
-  head.className = 'reading-head';
-  head.innerHTML =
-    `<span class="r-pos">${s.label}</span>
-     <span class="r-name">${s.name}</span>
-     <span class="r-en">${s.nameEn}</span>
-     <span class="r-orient ${s.orientation}">${s.orientationLabel}</span>`;
-
-  const m = document.createElement('p');
-  m.className = 'r-meaning';
-  m.innerHTML = `<span class="lbl">含义：</span>${s.meaning}`;
-
   const cur = document.createElement('p');
   cur.className = 'r-current';
   cur.innerHTML = `<span class="lbl">${s.orientationLabel}解读：</span>${s.current}`;
-
-  body.appendChild(head);
-  body.appendChild(m);
   body.appendChild(cur);
 
   if (s.roleLine) {
@@ -1214,7 +1210,6 @@ function buildReadingItem(s) {
     body.appendChild(kws);
   }
 
-  item.appendChild(img);
   item.appendChild(body);
   return item;
 }
@@ -1261,7 +1256,9 @@ function renderReading() {
     box.appendChild(ov);
   }
 
-  sections.forEach((s) => box.appendChild(buildReadingItem(s)));
+  // 3 张以内直接展开；长牌阵默认收起，点击行展开详情
+  const openAll = sections.length <= 3;
+  sections.forEach((s) => box.appendChild(buildReadingItem(s, openAll)));
 
   if (currentReading) {
     const adv = document.createElement('section');

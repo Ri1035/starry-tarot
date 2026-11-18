@@ -1256,3 +1256,177 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .version-badge { display: none; }
   .tarot-table { height: min(58vh, 520px); }
 }
+
+/* ============================================================
+ * v1.5.3 · 紧凑布局（减少滚动）
+ * 目标：
+ *   1. 解读页长牌阵可折叠，桌面双列；
+ *   2. 牌阵弹窗内部滚动，标题与筛选常驻；
+ *   3. 生命之树 / 七脉轮 / 凯尔特十字压缩高度；
+ *   4. 首页与抽牌页收掉多余留白。
+ * ============================================================ */
+
+/* ---------- 解读页：折叠卡片 ---------- */
+.reading-cards { gap: 12px; margin-bottom: 26px; }
+.reading-item {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+.reading-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.reading-summary::-webkit-details-marker { display: none; }
+.reading-item[open] .reading-summary { border-bottom: 1px dashed rgba(255, 255, 255, 0.08); }
+.reading-item .r-thumb {
+  width: 42px;
+  flex: none;
+  border-radius: 6px;
+  border: 1px solid var(--line-gold);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.reading-item .r-thumb.is-reversed { transform: rotate(180deg); }
+.r-sum-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.r-sum-top { display: flex; align-items: center; gap: 8px; }
+.r-sum-name {
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--gold-soft);
+}
+.r-sum-name .r-en {
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  margin-left: 6px;
+}
+.r-sum-hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.r-chevron {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 14px;
+  transition: transform 0.2s;
+}
+.reading-item[open] .r-chevron { transform: rotate(180deg); }
+.reading-body { padding: 2px 16px 14px; }
+.reading-body .r-meaning { margin-top: 0; }
+.reading-body p { margin-top: 4px; }
+.reading-item .r-alt { margin-top: 8px; }
+.reading-overview, .reading-advice { padding: 14px 16px; margin-bottom: 16px; }
+
+/* 桌面双列：牌多时高度直接减半 */
+@media (min-width: 980px) {
+  .reading-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .reading-overview, .reading-advice { grid-column: 1 / -1; }
+}
+
+/* ---------- 牌阵弹窗：标题/筛选常驻，列表内部滚动 ---------- */
+#modal-spreads .modal-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: min(86vh, 780px);
+}
+#modal-spreads .modal-title,
+#spread-filters { flex: none; }
+#spread-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 10px;
+}
+.spread-item { padding: 12px 8px; }
+.spread-item .s-name { font-size: 14px; letter-spacing: 1px; }
+.spread-item .s-count { margin-top: 4px; }
+
+/* ---------- 历史弹窗：工具条常驻，列表内部滚动 ---------- */
+#modal-history .modal-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: min(86vh, 760px);
+}
+#modal-history .modal-title,
+.history-tools,
+#modal-history .modal-footer { flex: none; }
+#history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+/* ---------- 抽牌布局压缩 ---------- */
+/* 凯尔特十字：柱列改为 2×2，高度接近减半 */
+.layout-celtic .celtic-staff { grid-template-columns: repeat(2, auto); gap: 10px; }
+.layout-celtic .celtic-cross { gap: 10px; }
+.layout-celtic .tarot-card { width: clamp(70px, 9vw, 104px); }
+
+.tree-grid { gap: 8px 16px; }
+.tree-grid .tarot-card { width: clamp(54px, 6.5vw, 78px); }
+.tree-grid .pos-label { font-size: 10px; }
+
+.chakra-grid { gap: 6px; }
+.chakra-grid .tarot-card { width: clamp(58px, 7.5vw, 78px); }
+.chakra-grid .pos-label { font-size: 10px; }
+
+/* ---------- 首页与抽牌页留白压缩 ---------- */
+.view-home { min-height: calc(100vh - 210px); }
+.hero-title { margin-bottom: 10px; }
+.hero-sub { margin-bottom: 28px; }
+.hero-cards { height: 176px; margin: 4px auto 22px; }
+.hero-card { width: 96px; height: 162px; }
+.draw-header { margin-bottom: 18px; }
+.card-layout { min-height: 240px; }
+.draw-actions { margin-top: 22px; }
+
+@media (max-width: 480px) {
+  .reading-item .r-thumb { width: 28px; }
+  .reading-summary { padding: 9px 12px; gap: 9px; }
+  .r-sum-hint { display: none; }
+  .reading-header { margin-bottom: 14px; }
+  .r-sum-name { font-size: 15px; }
+  .r-sum-name .r-en { display: none; }
+  .reading-body { padding: 2px 12px 12px; }
+  .tree-grid { gap: 6px 10px; }
+  .tree-grid .tarot-card { width: 52px; }
+  .chakra-grid .tarot-card { width: 56px; }
+  .layout-celtic .tarot-card { width: 74px; }
+  .layout-celtic .celtic-staff { gap: 8px; }
+  .layout-celtic .celtic-cross { gap: 8px; }
+  .hero-cards { height: 150px; margin-bottom: 18px; }
+  .hero-card { width: 84px; height: 142px; }
+
+  /* 移动端操作按钮改双列：原本 4~5 个按钮竖排会白白吃掉一整屏 */
+  .draw-actions,
+  .reading-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .draw-actions .btn,
+  .reading-actions .btn {
+    width: 100%;
+    padding: 11px 10px;
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+  .draw-actions .btn-link,
+  .reading-actions .btn-link { grid-column: 1 / -1; }
+}
