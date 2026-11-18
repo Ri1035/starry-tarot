@@ -381,6 +381,74 @@ const TAROT_SPREADS = [
       { label: '眉心轮 · 洞察', role: 'advice' },
       { label: '顶轮 · 意义', role: 'goal' }
     ]
+  },
+
+  /* ---------------- v1.5.4 新增（复用布局，0 新 CSS） ---------------- */
+  {
+    id: 'moon8',
+    name: '月相八相',
+    desc: '从新月到残月，八张牌串起一件事的完整周期。',
+    count: 8,
+    category: 'time',
+    layout: 'year',
+    info: { scene: '适合看一件需要经历完整周期的事：项目、关系、习惯养成。', tip: '满月位是能量峰值，残月位是收尾方式；两头都看，才知道该何时启动、何时放手。' },
+    positions: [
+      { label: '新月 · 起点', role: 'present' },
+      { label: '娥眉月 · 萌芽', role: 'future' },
+      { label: '上弦月 · 推进', role: 'future' },
+      { label: '盈凸月 · 扩张', role: 'future' },
+      { label: '满月 · 显化', role: 'outcome' },
+      { label: '亏凸月 · 分享', role: 'future' },
+      { label: '下弦月 · 释放', role: 'advice' },
+      { label: '残月 · 收束', role: 'future' }
+    ]
+  },
+  {
+    id: 'clover4',
+    name: '四叶草',
+    desc: '四片叶子四个面向，快速盘点当下的整体状态。',
+    count: 4,
+    category: 'life',
+    layout: 'grid2',
+    info: { scene: '适合每周复盘、生日或新年时做一次全面盘点。', tip: '四张牌不需要都"好"：有一片叶子逆位，就先补那一片，别同时修四个方向。' },
+    positions: [
+      { label: '爱情', role: 'relation' },
+      { label: '事业', role: 'goal' },
+      { label: '健康', role: 'foundation' },
+      { label: '财运', role: 'support' }
+    ]
+  },
+  {
+    id: 'choice5',
+    name: '抉择十字',
+    desc: '两个选项摊开对比，把代价和结果一起看见。',
+    count: 5,
+    category: 'life',
+    layout: 'cross5',
+    info: { scene: '适合两个 offer、两条路线、去或留这类真实两难。', tip: '重点不是"哪个更好"，而是两张结果牌里，你更能接受哪一种代价。' },
+    positions: [
+      { label: '现状', role: 'present' },
+      { label: '选项 A', role: 'goal' },
+      { label: '选项 B', role: 'goal' },
+      { label: 'A 的结果', role: 'outcome' },
+      { label: 'B 的结果', role: 'outcome' }
+    ]
+  },
+  {
+    id: 'relation5',
+    name: '关系十字',
+    desc: '五个位置看清两个人、连接本身与下一步。',
+    count: 5,
+    category: 'love',
+    layout: 'cross5',
+    info: { scene: '适合暧昧、冷战、复合前的关系梳理。', tip: '先看"关系"再看"建议"：连接本身的状态，决定了建议该是推进还是退出。' },
+    positions: [
+      { label: '你', role: 'self' },
+      { label: '对方', role: 'other' },
+      { label: '关系', role: 'relation' },
+      { label: '阻碍', role: 'obstacle' },
+      { label: '建议', role: 'advice' }
+    ]
   }
 ];
 

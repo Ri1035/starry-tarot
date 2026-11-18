@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.5.3';
+const APP_VERSION = '1.5.4';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 // 魔力源声明：按用户要求注明「魔力来自互联网」，并声明开发者不受反噬与诅咒
@@ -32,6 +32,7 @@ const state = {
 let spreadFilter = 'all'; // 牌阵列表当前筛选分类
 let currentView = 'home'; // 当前所在视图（3D 流程判断用）
 let currentReading = null; // 当前解读的引擎输出（复制 / 保存复用）
+let preloadedImages = [];  // v1.5.4：当前抽牌的卡面预加载（翻牌不再等图）
 let historyFilter = 'all'; // 历史记录：主题筛选
 let historyQuery = '';     // 历史记录：搜索词
 
@@ -696,6 +697,7 @@ function startDraw(spread) {
   state.flippedCount = 0;
   state.allRevealed = false;
   currentReading = null;      // 新一局：丢弃上一局的引擎输出
+  preloadCardImages(state.draw);   // 洗牌期间就把 10 张牌面拉进缓存
 
   $('#draw-title').textContent = spread.name;
   $('#draw-desc').textContent = spread.desc;
@@ -716,6 +718,7 @@ function start3dReading(spread) {
   state.flippedCount = 0;
   state.allRevealed = false;
   currentReading = null;      // 新一局：丢弃上一局的引擎输出
+  preloadCardImages(state.draw);   // 3D 贴图加载前先预热同一批图片
   // 重开一局：收起上一局的「解读」（此处不经过 showView，需单独复位）
   $('#btn-3d-to-reading').classList.add('hidden');
 
@@ -1004,7 +1007,68 @@ let shuffleJumpTimer = null;   // 洗牌抖动动画时长
 let flipAllRaf = 0;            // 「全部翻开」的交错翻牌循环句柄
 let dimTimer = null;           // 翻牌聚焦（其余牌变暗）的复位计时
 
-/** 自动洗牌：稍作延迟，等卡牌落位动画（dealIn 0.5s）走完再抖动，观感更连贯 */
+/** v1.5.4：预加载当前抽牌的卡面，翻牌时不再现场下载解码 */
+function preloadCardImages(draw) {
+  preloadedImages = draw.map((d) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = 'assets/cards/' + d.card.img;
+    return img;
+  });
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** v1.5.4：洗牌开始时把所有牌收拢到牌堆（视觉上的"抽牌"起点） */
+function gatherDeck(layout) {
+  if (!layout || prefersReducedMotion()) return;
+  const slots = Array.from(layout.querySelectorAll('.card-slot'));
+  if (!slots.length) return;
+  const lr = layout.getBoundingClientRect();
+  const deckX = lr.left + lr.width / 2;
+  const deckY = lr.top + lr.height / 2 + Math.min(54, lr.height * 0.12);
+  slots.forEach((slot, i) => {
+    const r = slot.getBoundingClientRect();
+    const dx = deckX - (r.left + r.width / 2);
+    const dy = deckY - (r.top + r.height / 2);
+    slot.style.transition = 'transform 0.34s cubic-bezier(0.4, 0, 0.2, 1)';
+    slot.style.transform = `translate(${dx}px, ${dy}px) scale(0.62) rotate(${((i % 5) - 2) * 1.6}deg)`;
+    slot.style.zIndex = String(20 - i);
+  });
+}
+
+/** v1.5.4：从牌堆依次飞向卡位（洗牌动画结束时调用） */
+function flyDeal(layout) {
+  if (!layout || prefersReducedMotion()) return;
+  const slots = Array.from(layout.querySelectorAll('.card-slot'));
+  if (!slots.length) return;
+  layout.classList.add('dealing');
+  let total = 0;
+  slots.forEach((slot, i) => {
+    const from = slot.style.transform || 'none';
+    const anim = slot.animate(
+      [
+        { transform: from, opacity: 0.85 },
+        { transform: 'none', opacity: 1 }
+      ],
+      { duration: 520, delay: i * 60, easing: 'cubic-bezier(0.22, 0.9, 0.24, 1)', fill: 'both' }
+    );
+    total = Math.max(total, i * 60 + 520);
+    anim.onfinish = () => {
+      slot.style.transition = '';
+      slot.style.transform = '';
+      slot.style.zIndex = '';
+    };
+  });
+  setTimeout(() => {
+    layout.classList.remove('dealing');
+    slots.forEach((slot) => { slot.style.transform = ''; slot.style.transition = ''; slot.style.zIndex = ''; });
+  }, total + 60);
+}
+
+/** 自动洗牌：稍作延迟，等卡牌落位动画走完再抖动，观感更连贯 */
 function autoShuffle() {
   clearTimeout(autoShuffleTimer);
   autoShuffleTimer = setTimeout(doShuffle, 420);
@@ -1017,6 +1081,7 @@ function doShuffle() {
   const layout = $('#card-layout');
   if (!layout) return;
   const btnRedeal = $('#btn-redeal');
+  gatherDeck(layout);                 // v1.5.4：先收拢成牌堆，再开始洗牌抖动
   layout.classList.add('shuffling');
   if (btnRedeal) btnRedeal.disabled = true;
   clearTimeout(shuffleJumpTimer);
@@ -1027,6 +1092,7 @@ function doShuffle() {
     state.shuffled = true;
     if (btnRedeal) btnRedeal.disabled = false;
     $('#btn-flip-all').classList.remove('hidden');
+    flyDeal(layout);                    // v1.5.4：从牌堆依次飞到卡位
     showToast('牌已洗好，点击卡牌翻开 ✨');
   }, 1200);
 }
@@ -1041,6 +1107,14 @@ function clearDrawTimers() {
   if (layout) {
     layout.classList.remove('shuffling');
     layout.classList.remove('has-reveal');
+    layout.classList.remove('dealing');
+    // 中止发牌 WAAPI，并清掉可能残留的内联位移，避免下次进入带着旧位置
+    try { layout.getAnimations({ subtree: true }).forEach((a) => a.cancel()); } catch (e) { /* 老内核忽略 */ }
+    layout.querySelectorAll('.card-slot').forEach((slot) => {
+      slot.style.transform = '';
+      slot.style.transition = '';
+      slot.style.zIndex = '';
+    });
   }
 }
 

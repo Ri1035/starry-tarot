@@ -98,9 +98,10 @@ async function main() {
   await page.click('#btn-open-spreads');
   await sleep(400);
   const spreadNames = await page.$$eval('.spread-item .s-name', (els) => els.map((e) => e.textContent));
-  assert(spreadNames.length === 22, '牌阵共 22 个（实际 ' + spreadNames.length + '）');
+  assert(spreadNames.length === 26, '牌阵共 26 个（实际 ' + spreadNames.length + '）');
   assert(spreadNames.includes('生命之树') && spreadNames.includes('七脉轮'), '新增生命之树 / 七脉轮');
   assert(spreadNames.includes('周运七日') && spreadNames.includes('是否之轮'), '新增周运 / 是否之轮');
+  assert(spreadNames.includes('月相八相') && spreadNames.includes('抉择十字'), '新增月相八相 / 抉择十字');
   await page.click('#modal-spreads .modal-close');
   await sleep(700);
 

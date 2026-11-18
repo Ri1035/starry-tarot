@@ -1099,7 +1099,10 @@ function placeCards(spread, draw) {
     const s = slots[i] || { x: 0, z: 0, y: CFG.cardY, rotY: 0 };
     const group = new THREE.Group();
     // v1.5.1：高密度牌阵（生命之树 / 七脉轮）缩小卡牌，保证同列不重叠
-    const cardScale = spread.layout === 'tree' ? 0.68 : spread.layout === 'chakra' ? 0.62 : 1;
+    const cardScale = spread.layout === 'tree' ? 0.68
+      : spread.layout === 'chakra' ? 0.60
+      : spread.layout === 'celtic' ? 0.95
+      : 1;
     group.scale.setScalar(cardScale);
     // flipper：只承载"翻牌"这一个自由度，与外层的落位/倾倒解耦
     const flipper = new THREE.Group();
@@ -1130,7 +1133,9 @@ function placeCards(spread, draw) {
     // 每帧把它的 localZ 校正到「世界高度 = CFG.shadowY」，使其始终贴在桌面而不是跟着浮起
     const shadow = new THREE.Mesh(shadowGeo, shadowMat);
     shadow.visible = false;         // 落牌完成前不显示，避免影子先于牌出现
-    group.add(shadow);
+    // 叠放在其他牌之上的牌（如凯尔特十字的挑战位）不投影，否则两张影子共面会闪烁
+    const elevated = (s.y !== undefined ? s.y : CFG.cardY) > CFG.cardY + 0.005;
+    if (!elevated) group.add(shadow);
 
     const card = {
       group,

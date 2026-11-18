@@ -68,13 +68,21 @@ export function getSpreadPositions3d(spread) {
       ];
       break;
 
-    case 'hex':                                       // 3×2
-      slots = gridLayout(3, 2);
+    case 'hex': {
+      // v1.5.4：与 2D 六边形环一致（1 左上 / 2 右上 / 3 右 / 4 右下 / 5 左下 / 6 左）
+      // 每张牌的长轴沿半径方向，避免轴向排列时相邻卡位在 x、z 上同时小于牌宽牌高而互相压盖
+      const R = 2.5;
+      slots = [];
+      for (let i = 0; i < 6; i++) {
+        const a = (-120 + i * 60) * Math.PI / 180;
+        slots.push({ x: Math.cos(a) * R, z: Math.sin(a) * R, rotY: a + Math.PI / 2 });
+      }
       break;
+    }
 
     case 'year':
-    case 'zodiac':                                    // 4×3
-      slots = gridLayout(4, 3);
+    case 'zodiac':                                    // 4×3（月相八相为 4×2）
+      slots = n === 8 ? gridLayout(4, 2) : gridLayout(4, 3);
       break;
 
     case 'columns':
@@ -125,19 +133,19 @@ export function getSpreadPositions3d(spread) {
 
     case 'celtic':
       // 十字（前 6 张）整体左移，右侧留给柱列（后 4 张）
-      // [1]挑战 横置叠于 [0]中心之上；柱列 4 张纵向略叠（间距 2.15 < 牌高 2.35），
-      // 并逐张抬高 0.016，读作"一沓牌"而不是平面穿模
+      // v1.5.4：柱列间距 2.15 → 2.35（卡牌缩放 0.95 后高 2.23），取消逐张抬高，
+      // 原来"略叠一沓"在实机上会读成穿模；挑战位抬到 0.10，翻下面的牌不再穿过去。
       slots = [
         { x: -1.7, z: 0 },
-        { x: -1.7, z: 0, y: 0.062, rotY: Math.PI / 2 },
+        { x: -1.7, z: 0, y: 0.10, rotY: Math.PI / 2 },
         { x: -1.7, z: GZ },                                   // 基础（下）
         { x: -1.7 - GX, z: 0 },                               // 过去（左）
         { x: -1.7, z: -GZ },                                  // 目标（上）
         { x: -1.7 + GX, z: 0 },                               // 未来（右）
-        { x: 2.5, z: -3.225, y: 0.030 },
-        { x: 2.5, z: -1.075, y: 0.046 },
-        { x: 2.5, z: 1.075, y: 0.062 },
-        { x: 2.5, z: 3.225, y: 0.078 }
+        { x: 2.4, z: -3.4 },
+        { x: 2.4, z: -1.05 },
+        { x: 2.4, z: 1.05 },
+        { x: 2.4, z: 3.4 }
       ];
       break;
 
