@@ -58,7 +58,14 @@
 - [x] `npm run test:engine`：22 牌阵 × 300 轮，6600 次组合 0 异常
 - [x] `npm run test:e2e`：18 项断言全过，0 控制台错误
 - [x] 截图核对：解读页三段式、生命之树居中、七脉轮单列、分享海报补白
-- [ ] 提交 / tag / 推送 / 部署（见下方发布记录）
+- [x] 提交 / tag / 推送 / 部署
+
+### 发布记录
+- 2026-11-18：GitHub `main` 提交 `c35ba41`，tag `v1.5.2` 已推送
+- Cloudflare Pages `starry-tarot` production `910ce22b`（暂存目录排除 docs/tests/.github/package*.json）
+- 线上验证：徽标 v1.5.2、22 个牌阵、2D 自动洗牌→翻牌→解读（总览/建议/角色句齐全）、
+  3D 模块与画布正常、0 控制台错误
+- 开发文件核对：`/docs/*` 与 `/tests/*` 均回落到 index.html，未泄露源码
 
 ## 2026-11-18 · v1.3.7 3D 质感优化（零新增加载）
 
