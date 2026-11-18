@@ -2,6 +2,64 @@
 
 > 本文件用于记录每轮开发的关键决策、进度与待办，防止上下文丢失。
 
+## 2026-11-18 · v1.5.2 翻牌仪式感 / 离线解读引擎 / 牌阵扩充 / 分享海报
+
+### 任务
+用户全权委托，按 `docs/PLAN-v1.4.md` 一次性推进：
+2D 翻牌设计感、牌阵扩充、离线解读、分享海报与工程化。
+
+### 决策记录（用户授权范围内的拍板）
+- **音效**：默认开启、音量 0.09、页脚可关，选择写入 localStorage。
+  连续翻牌 90ms 限流，避免「全部翻开」时变成机关枪；WebAudio 合成噪声 + 低频「嗒」，
+  噪声缓冲按采样率缓存一次，不在每次翻牌时重新分配。
+- **解读文案**：只讲当前朝向，另一面折叠；建议面板标题已有「建议」，引擎的 `advice`
+  字段因此不带前缀，复制文本由 `compose()` 统一补「建议：」。
+- **历史存储**：保持 localStorage（30 条上限，约 60KB），暂不迁 IndexedDB ——
+  迁移收益低、回归风险高。改为增加主题筛选、牌名搜索、JSON 导出与配额兜底。
+- **工程化**：E2E 依赖软件 WebGL，云端慢且易抖，CI 只跑语法 + 引擎单测；
+  E2E 与 Pages 部署改为 `workflow_dispatch` 手动触发。
+
+### 实施
+1. **翻牌仪式感**（`css/style.css` + `app.js`）
+   - 状态类：`is-flipping`（抬起/光环）、`card-slot.is-revealed`（定妆/高光/标签）；
+     布局级 `has-reveal` 让其余牌后退变暗，900ms 后自动复位。
+   - 只动 transform / opacity；`prefers-reduced-motion` 下全部降级。
+   - 音效模块 `playFlipSound()`，2D 与 3D 共用（3D 在 `tarot:flip3d` 里触发）。
+2. **离线引擎**（新增 `js/data/lexicon.js`、`js/reading/engine.js`）
+   - 牌性推导：大阿卡纳用手工元素表；小阿卡纳按花色 + 数字语义推导，避免逐张写 78 条。
+   - 位置 role：优先显式 `role`，否则按标签关键词正则兜底（兼容旧牌阵）。
+   - 规则层 10 条 + 18 组牌对；单次最多取权重最高的 2 条，防止堆砌。
+   - 输出 `{ overview, sections, advice, text }`，app.js 只负责渲染。
+3. **牌阵 16 → 22**
+   - 复用布局 4 个（周运/四季/灵魂伴侣/是否），0 新 CSS。
+   - 生命之树 2D 用 3×6 网格；3D 用「双柱 + 中轴」简化构图，卡牌缩小到 0.68。
+   - 七脉轮 2D 单列；3D 单列 7 张，卡牌缩小到 0.62，翻牌抬升按比例降低。
+4. **分享海报**（`makePoster`）
+   - 1080×1920，卡面按正逆位旋转绘制；内容较少时用淡金魔法阵 + 星语补白。
+   - 移动端 `navigator.share({files})` 优先，桌面端下载 PNG。
+5. **工程化**
+   - `tests/engine.mjs`（Node + vm，零依赖）：22 牌阵 × 300 轮。
+   - `tests/regress.mjs`（Puppeteer）：首页/声明/牌阵数量/翻牌仪式/解读面板/历史筛选/3D 挂载。
+   - `.github/workflows/ci.yml`（push 跑语法 + 引擎单测；E2E 手动）。
+   - `.github/workflows/deploy.yml`（手动部署，需仓库 Secrets）。
+
+### 踩坑与修复
+- **嵌套同名布局类导致生命之树偏左**：`#card-layout` 与内层 wrapper 都叫 `.layout-tree`，
+  双层 grid 嵌套后轨道宽度异常。改为外层 `.layout-tree` 只负责居中（flex），
+  内层用 `.tree-grid` 承载网格；七脉轮同理拆出 `.chakra-grid`。
+- **缩小卡牌的接触阴影会浮空**：阴影是 group 子节点，会被 `group.scale` 缩放，
+  其 localZ 需除以 `cardScale` 才能保持贴桌面。
+- **软件 WebGL 时序**：SwiftShader 下约 2fps，`dt` 钳制 50ms，0.6s 落牌实际约 10s；
+  E2E 因此只验证 3D 模块加载与画布挂载。
+- **模态关闭动画**：Puppeteer 点击后立刻点下层按钮会被遮罩拦截，测试等待改为 700ms。
+
+### 验证
+- [x] `npm run check`（7 个 JS 文件语法）
+- [x] `npm run test:engine`：22 牌阵 × 300 轮，6600 次组合 0 异常
+- [x] `npm run test:e2e`：18 项断言全过，0 控制台错误
+- [x] 截图核对：解读页三段式、生命之树居中、七脉轮单列、分享海报补白
+- [ ] 提交 / tag / 推送 / 部署（见下方发布记录）
+
 ## 2026-11-18 · v1.3.7 3D 质感优化（零新增加载）
 
 ### 任务

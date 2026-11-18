@@ -1,0 +1,33 @@
+name: Deploy Pages
+
+# 手动触发：需要先在仓库 Secrets 配置
+#   CLOUDFLARE_API_TOKEN  （Pages:Edit 权限）
+#   CLOUDFLARE_ACCOUNT_ID
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建暂存目录（排除开发与测试文件）
+        run: |
+          mkdir -p "$RUNNER_TEMP/site"
+          rsync -a \
+            --exclude 'docs' \
+            --exclude 'tests' \
+            --exclude '.uploads' \
+            --exclude '.wrangler' \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'node_modules' \
+            ./ "$RUNNER_TEMP/site/"
+
+      - name: 部署到 Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy ${{ runner.temp }}/site --project-name=starry-tarot --branch=main

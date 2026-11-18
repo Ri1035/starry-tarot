@@ -1,0 +1,16 @@
+{
+  "name": "starry-tarot",
+  "private": true,
+  "version": "1.5.2",
+  "type": "module",
+  "description": "星穹塔罗 · 纯前端塔罗占卜（无构建、无后端）",
+  "scripts": {
+    "check": "node --check js/app.js && node --check js/data/cards.js && node --check js/data/spreads.js && node --check js/data/lexicon.js && node --check js/reading/engine.js && node --check js/3d/table3d.js && node --check js/3d/spreads3d.js",
+    "test:engine": "node tests/engine.mjs",
+    "test:e2e": "node tests/regress.mjs",
+    "test": "npm run check && npm run test:engine"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.0.0"
+  }
+}

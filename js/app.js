@@ -14,7 +14,7 @@
 'use strict';
 
 /* ---------- 1. 常量与全局状态 ---------- */
-const APP_VERSION = '1.3.7';
+const APP_VERSION = '1.5.2';
 const STORAGE_KEY = 'starry-tarot-readings-v1';
 const STORAGE_MAX = 30;   // 本地最多保留的解读条数
 // 魔力源声明：按用户要求注明「魔力来自互联网」，并声明开发者不受反噬与诅咒
@@ -31,6 +31,9 @@ const state = {
 
 let spreadFilter = 'all'; // 牌阵列表当前筛选分类
 let currentView = 'home'; // 当前所在视图（3D 流程判断用）
+let currentReading = null; // 当前解读的引擎输出（复制 / 保存复用）
+let historyFilter = 'all'; // 历史记录：主题筛选
+let historyQuery = '';     // 历史记录：搜索词
 
 /* ---------- 2. 工具函数 ---------- */
 const $ = (sel) => document.querySelector(sel);
@@ -64,6 +67,81 @@ function formatNow() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* ---------- 2.1 翻牌音效（WebAudio 合成，零素材） ---------- */
+// 默认开启但音量很低；用户可在页脚关闭，选择写入 localStorage。
+// 噪声缓冲只创建一次（按采样率缓存），每次翻牌复用，避免重复分配。
+const SOUND_KEY = 'starry-tarot-sound';
+let soundOn = localStorage.getItem(SOUND_KEY) !== '0';
+let audioCtx = null;
+let noiseBuf = null;
+let lastFlipSound = 0;
+
+function ensureAudio() {
+  if (!soundOn) return null;
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try { audioCtx = new AC(); } catch (e) { return null; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+/** 翻牌的「沙」声：带通白噪声 + 极短低频点，完全由 WebAudio 合成 */
+function playFlipSound() {
+  if (!soundOn) return;
+  const now = performance.now();
+  if (now - lastFlipSound < 90) return;   // 连续翻牌时限流，避免机关枪
+  lastFlipSound = now;
+
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const t = ctx.currentTime;
+
+  if (!noiseBuf) {
+    const len = Math.floor(ctx.sampleRate * 0.16);
+    noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const k = 1 - i / len;
+      data[i] = (Math.random() * 2 - 1) * k * k;
+    }
+  }
+
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1600;
+  bp.Q.value = 0.7;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.09, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+  src.connect(bp).connect(g).connect(ctx.destination);
+  src.start(t);
+  src.stop(t + 0.16);
+
+  // 低频「嗒」：给翻面一个落定感
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(220, t);
+  osc.frequency.exponentialRampToValueAtTime(90, t + 0.08);
+  const g2 = ctx.createGain();
+  g2.gain.setValueAtTime(0.0001, t);
+  g2.gain.exponentialRampToValueAtTime(0.045, t + 0.01);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  osc.connect(g2).connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.1);
+}
+
+/** 更新音效开关文案 */
+function syncSoundToggle() {
+  const btn = $('#btn-sound');
+  if (btn) btn.textContent = soundOn ? '✦ 音效开' : '✦ 音效关';
 }
 
 /* ---------- 3. 星空粒子背景 ---------- */
@@ -462,6 +540,24 @@ function buildPreviewSlots(spread) {
     wrap.appendChild(staff);
     return wrap;
   }
+  if (spread.layout === 'chakra') {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;';
+    spread.positions.forEach((p) => wrap.appendChild(previewSlot(p.label)));
+    return wrap;
+  }
+  if (spread.layout === 'tree') {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:grid;grid-template-columns:repeat(3,auto);gap:8px 18px;justify-items:center;align-items:center;';
+    // 与 2D 布局一致：3 列 6 行（王冠在顶，王国在底）
+    const areas = ['1 / 2', '2 / 3', '2 / 1', '3 / 3', '3 / 1', '3 / 2', '4 / 3', '4 / 1', '5 / 2', '6 / 2'];
+    spread.positions.forEach((p, i) => {
+      const slot = previewSlot(p.label);
+      slot.style.gridArea = areas[i] || 'auto';
+      wrap.appendChild(slot);
+    });
+    return wrap;
+  }
   // single
   return previewSlot(spread.positions[0].label);
 }
@@ -599,6 +695,7 @@ function startDraw(spread) {
   state.shuffled = false;
   state.flippedCount = 0;
   state.allRevealed = false;
+  currentReading = null;      // 新一局：丢弃上一局的引擎输出
 
   $('#draw-title').textContent = spread.name;
   $('#draw-desc').textContent = spread.desc;
@@ -618,6 +715,7 @@ function start3dReading(spread) {
   state.shuffled = true;   // 3D 落牌即视为洗牌完成
   state.flippedCount = 0;
   state.allRevealed = false;
+  currentReading = null;      // 新一局：丢弃上一局的引擎输出
   // 重开一局：收起上一局的「解读」（此处不经过 showView，需单独复位）
   $('#btn-3d-to-reading').classList.add('hidden');
 
@@ -771,6 +869,32 @@ const LAYOUTS = {
     wrap.className = 'layout-zodiac';
     draw.forEach((d, i) => wrap.appendChild(makeSlot(spread, d, i, faceDown)));
     return wrap;
+  },
+  /* ---- v1.5.1 独立布局 ---- */
+  tree(spread, draw, faceDown) {
+    // 生命之树：3 列 6 行。内层用 tree-grid，避免与外层 .layout-tree 互相嵌套
+    const wrap = document.createElement('div');
+    wrap.className = 'tree-grid';
+    draw.forEach((d, i) => {
+      const slot = makeSlot(spread, d, i, faceDown);
+      slot.classList.add('tree-slot-' + i);
+      const card = slot.querySelector('.tarot-card');
+      if (card) card.style.setProperty('--tilt', '0deg');   // 结构化牌阵不做随机倾斜
+      wrap.appendChild(slot);
+    });
+    return wrap;
+  },
+  chakra(spread, draw, faceDown) {
+    // 七脉轮：自下而上的单列
+    const wrap = document.createElement('div');
+    wrap.className = 'chakra-grid';
+    draw.forEach((d, i) => {
+      const slot = makeSlot(spread, d, i, faceDown);
+      const card = slot.querySelector('.tarot-card');
+      if (card) card.style.setProperty('--tilt', '0deg');
+      wrap.appendChild(slot);
+    });
+    return wrap;
   }
 };
 
@@ -878,6 +1002,7 @@ function makeSlot(spread, d, index, faceDown) {
 let autoShuffleTimer = null;   // 进入抽牌视图 → 开始洗牌的延迟
 let shuffleJumpTimer = null;   // 洗牌抖动动画时长
 let flipAllRaf = 0;            // 「全部翻开」的交错翻牌循环句柄
+let dimTimer = null;           // 翻牌聚焦（其余牌变暗）的复位计时
 
 /** 自动洗牌：稍作延迟，等卡牌落位动画（dealIn 0.5s）走完再抖动，观感更连贯 */
 function autoShuffle() {
@@ -910,9 +1035,13 @@ function doShuffle() {
 function clearDrawTimers() {
   clearTimeout(autoShuffleTimer); autoShuffleTimer = null;
   clearTimeout(shuffleJumpTimer); shuffleJumpTimer = null;
+  clearTimeout(dimTimer); dimTimer = null;
   cancelAnimationFrame(flipAllRaf); flipAllRaf = 0;   // 中止未翻完的「全部翻开」
   const layout = $('#card-layout');
-  if (layout) layout.classList.remove('shuffling');
+  if (layout) {
+    layout.classList.remove('shuffling');
+    layout.classList.remove('has-reveal');
+  }
 }
 
 /** 离开抽牌视图：清掉未完成的洗牌计时器，避免残留状态污染下一次占卜 */
@@ -933,6 +1062,16 @@ function flipCard(cardEl) {
   const d = state.draw[index];
   if (d === undefined) return;
 
+  // v1.4.0 翻牌仪式感：音效 + 抬起 + 光环，其余牌后退变暗
+  playFlipSound();
+  cardEl.classList.add('is-flipping');
+  const layout = $('#card-layout');
+  if (layout) {
+    layout.classList.add('has-reveal');
+    clearTimeout(dimTimer);
+    dimTimer = setTimeout(() => layout.classList.remove('has-reveal'), 900);
+  }
+
   const front = cardEl.querySelector('.tarot-card-front');
   if (front && !front.firstChild) {
     const img = document.createElement('img');
@@ -951,6 +1090,13 @@ function flipCard(cardEl) {
 
   // 双 rAF 确保浏览器先绘制背面，再翻面
   requestAnimationFrame(() => requestAnimationFrame(() => cardEl.classList.add('flipped')));
+
+  // 翻转结束（--dur = 0.6s）：收起抬起状态，交给「定妆 + 高光 + 标签浮现」动画
+  const slot = cardEl.closest('.card-slot');
+  setTimeout(() => {
+    cardEl.classList.remove('is-flipping');
+    if (slot) slot.classList.add('is-revealed');
+  }, 660);
 
   state.flippedCount += 1;
   checkAllFlipped();
@@ -1016,63 +1162,133 @@ function gotoReading() {
 
 /* ---------- 7. 解读结果 ---------- */
 
-/** 渲染完整解读 */
+/** 把一条逐位解读渲染成文章节点（引擎与降级路径共用） */
+function buildReadingItem(s) {
+  const item = document.createElement('article');
+  item.className = 'reading-item';
+
+  const img = document.createElement('img');
+  img.src = 'assets/cards/' + s.img;
+  img.alt = s.name;
+  if (s.orientation === 'reversed') img.classList.add('is-reversed');
+
+  const body = document.createElement('div');
+  body.className = 'reading-body';
+
+  const head = document.createElement('div');
+  head.className = 'reading-head';
+  head.innerHTML =
+    `<span class="r-pos">${s.label}</span>
+     <span class="r-name">${s.name}</span>
+     <span class="r-en">${s.nameEn}</span>
+     <span class="r-orient ${s.orientation}">${s.orientationLabel}</span>`;
+
+  const m = document.createElement('p');
+  m.className = 'r-meaning';
+  m.innerHTML = `<span class="lbl">含义：</span>${s.meaning}`;
+
+  const cur = document.createElement('p');
+  cur.className = 'r-current';
+  cur.innerHTML = `<span class="lbl">${s.orientationLabel}解读：</span>${s.current}`;
+
+  body.appendChild(head);
+  body.appendChild(m);
+  body.appendChild(cur);
+
+  if (s.roleLine) {
+    const role = document.createElement('p');
+    role.className = 'r-role';
+    role.textContent = s.roleLine;
+    body.appendChild(role);
+  }
+
+  const alt = document.createElement('details');
+  alt.className = 'r-alt';
+  alt.innerHTML = `<summary>另一面 · ${s.otherLabel}</summary><p>${s.other}</p>`;
+  body.appendChild(alt);
+
+  if (s.keywords && s.keywords.length) {
+    const kws = document.createElement('div');
+    kws.className = 'r-keywords';
+    kws.innerHTML = s.keywords.map((k) => `<span class="r-kw">${k}</span>`).join('');
+    body.appendChild(kws);
+  }
+
+  item.appendChild(img);
+  item.appendChild(body);
+  return item;
+}
+
+/** 引擎缺失时的降级数据（保证任何情况下都能出解读） */
+function fallbackSections(spread, draw) {
+  return draw.map((d, i) => ({
+    label: spread.positions[i].label,
+    name: d.card.name,
+    nameEn: d.card.nameEn,
+    img: d.card.img,
+    orientation: d.orientation,
+    orientationLabel: d.orientation === 'reversed' ? '逆位' : '正位',
+    meaning: d.card.meaning,
+    current: d.orientation === 'reversed' ? d.card.reversed : d.card.upright,
+    roleLine: '',
+    other: d.orientation === 'reversed' ? d.card.upright : d.card.reversed,
+    otherLabel: d.orientation === 'reversed' ? '正位' : '逆位',
+    keywords: d.card.keywords || []
+  }));
+}
+
+/** 渲染完整解读（v1.5.0：总览 / 逐位 / 建议） */
 function renderReading() {
   const spread = state.spread;
   $('#reading-title').textContent = '占卜结果 · ' + spread.name;
   $('#reading-date').textContent = formatNow();
 
+  currentReading = window.TarotReading ? window.TarotReading.compose(spread, state.draw) : null;
+  const sections = currentReading ? currentReading.sections : fallbackSections(spread, state.draw);
+
   const box = $('#reading-cards');
   box.innerHTML = '';
-  state.draw.forEach((d, i) => {
-    const card = d.card;
-    const item = document.createElement('article');
-    item.className = 'reading-item';
-    const img = document.createElement('img');
-    img.src = 'assets/cards/' + card.img;
-    img.alt = card.name;
-    if (d.orientation === 'reversed') img.classList.add('is-reversed');
 
-    const body = document.createElement('div');
-    body.className = 'reading-body';
+  if (currentReading) {
+    const ov = document.createElement('section');
+    ov.className = 'reading-overview';
+    const h = document.createElement('h3');
+    h.textContent = '总览';
+    const p = document.createElement('p');
+    p.textContent = currentReading.overview;
+    ov.appendChild(h);
+    ov.appendChild(p);
+    box.appendChild(ov);
+  }
 
-    const head = document.createElement('div');
-    head.className = 'reading-head';
-    head.innerHTML =
-      `<span class="r-pos">${spread.positions[i].label}</span>
-       <span class="r-name">${card.name}</span>
-       <span class="r-en">${card.nameEn}</span>
-       <span class="r-orient ${d.orientation}">${d.orientation === 'upright' ? '正位' : '逆位'}</span>`;
+  sections.forEach((s) => box.appendChild(buildReadingItem(s)));
 
-    const m = document.createElement('p');
-    m.className = 'r-meaning';
-    m.innerHTML = `<span class="lbl">含义：</span>${card.meaning}`;
-    const u = document.createElement('p');
-    u.className = 'r-upright';
-    u.innerHTML = `<span class="lbl">${d.orientation === 'upright' ? '正位解读：' : '正位（未显现）：'}</span>${card.upright}`;
-    const r = document.createElement('p');
-    r.className = 'r-reversed';
-    r.innerHTML = `<span class="lbl">${d.orientation === 'reversed' ? '逆位解读：' : '逆位（潜在影响）：'}</span>${card.reversed}`;
-
-    body.appendChild(head);
-    body.appendChild(m);
-    body.appendChild(u);
-    body.appendChild(r);
-    item.appendChild(img);
-    item.appendChild(body);
-    box.appendChild(item);
-  });
+  if (currentReading) {
+    const adv = document.createElement('section');
+    adv.className = 'reading-advice';
+    const h = document.createElement('h3');
+    h.textContent = '建议';
+    const p = document.createElement('p');
+    p.textContent = currentReading.advice;
+    adv.appendChild(h);
+    adv.appendChild(p);
+    box.appendChild(adv);
+  }
 }
 
 /** 生成可复制的解读文本 */
 function buildReadingText(spread, draw, dateStr) {
   const lines = [`【星穹塔罗 · ${spread.name}】`, dateStr, ''];
-  draw.forEach((d, i) => {
-    const ori = d.orientation === 'upright' ? '正位' : '逆位';
-    const txt = d.orientation === 'upright' ? d.card.upright : d.card.reversed;
-    lines.push(`${i + 1}. ${spread.positions[i].label} · ${d.card.name}（${ori}）`);
-    lines.push(`   ${txt}`);
-  });
+  if (currentReading) {
+    lines.push(currentReading.text);
+  } else {
+    draw.forEach((d, i) => {
+      const ori = d.orientation === 'upright' ? '正位' : '逆位';
+      const txt = d.orientation === 'upright' ? d.card.upright : d.card.reversed;
+      lines.push(`${i + 1}. ${spread.positions[i].label} · ${d.card.name}（${ori}）`);
+      lines.push(`   ${txt}`);
+    });
+  }
   lines.push('');
   lines.push(MAGIC_NOTE);
   lines.push(DISCLAIMER);
@@ -1087,6 +1303,222 @@ function copyReading() {
     .catch(() => showToast('复制失败，请手动长按选择复制'));
 }
 
+/* ---------- 7.1 分享海报（Canvas 1080×1920，零后端） ---------- */
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+/** 逐字换行：中文没有空格，按测量宽度断行 */
+function drawWrapped(g, text, x, y, maxW, lineH, maxLines) {
+  const chars = Array.from(text);
+  let line = '';
+  let lines = 0;
+  for (const ch of chars) {
+    const test = line + ch;
+    if (g.measureText(test).width > maxW && line) {
+      g.fillText(line, x, y);
+      y += lineH;
+      lines += 1;
+      if (lines >= maxLines) return y;
+      line = ch;
+    } else {
+      line = test;
+    }
+  }
+  if (line && lines < maxLines) {
+    g.fillText(line, x, y);
+    y += lineH;
+  }
+  return y;
+}
+
+/** 生成分享图：下载 PNG；移动端支持文件分享时优先调起系统分享 */
+async function makePoster() {
+  if (!state.spread || !currentReading) { showToast('请先完成一次占卜'); return; }
+  const btn = $('#btn-poster');
+  if (btn) btn.disabled = true;
+  try {
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+
+    const W = 1080, H = 1920;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const g = canvas.getContext('2d');
+
+    // 深空背景
+    const bg = g.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#120a26');
+    bg.addColorStop(0.5, '#1d1140');
+    bg.addColorStop(1, '#08040f');
+    g.fillStyle = bg;
+    g.fillRect(0, 0, W, H);
+
+    // 星点
+    for (let i = 0; i < 240; i++) {
+      g.fillStyle = 'rgba(230,220,255,' + (Math.random() * 0.5 + 0.1).toFixed(2) + ')';
+      g.beginPath();
+      g.arc(Math.random() * W, Math.random() * H, Math.random() * 1.6 + 0.3, 0, Math.PI * 2);
+      g.fill();
+    }
+
+    // 金色双边框
+    g.strokeStyle = 'rgba(232,197,107,0.55)';
+    g.lineWidth = 3;
+    g.strokeRect(36, 36, W - 72, H - 72);
+    g.strokeStyle = 'rgba(232,197,107,0.18)';
+    g.lineWidth = 1;
+    g.strokeRect(52, 52, W - 104, H - 104);
+
+    g.textAlign = 'center';
+    g.fillStyle = '#f5dfa0';
+    g.font = '600 62px Cinzel, serif';
+    g.fillText('星穹塔罗', W / 2, 188);
+    g.font = '22px "Noto Serif SC", serif';
+    g.fillStyle = 'rgba(230,220,255,0.55)';
+    g.fillText('S T A R R Y   T A R O T', W / 2, 228);
+
+    g.fillStyle = '#f5dfa0';
+    g.font = '600 38px "Noto Serif SC", serif';
+    g.fillText(state.spread.name, W / 2, 312);
+    g.fillStyle = 'rgba(200,190,230,0.6)';
+    g.font = '22px "Noto Serif SC", serif';
+    g.fillText(formatNow(), W / 2, 352);
+
+    // 卡牌：最多 5 张一行，超过则两行
+    const n = state.draw.length;
+    const perRow = Math.min(5, n);
+    const rows = Math.ceil(n / perRow);
+    const cw = n <= 3 ? 188 : 152;
+    const ch = cw * 527 / 300;
+    const gapX = 20, gapY = 26;
+    let cardsBottom = 400;
+    for (let i = 0; i < n; i++) {
+      const r = Math.floor(i / perRow);
+      const c = i % perRow;
+      const cnt = Math.min(perRow, n - r * perRow);
+      const startX = (W - (cnt * cw + (cnt - 1) * gapX)) / 2;
+      const x = startX + c * (cw + gapX);
+      const y = 400 + r * (ch + gapY);
+      const d = state.draw[i];
+
+      try {
+        const img = await loadImage('assets/cards/' + d.card.img);
+        g.save();
+        g.beginPath();
+        const rad = 12;
+        g.moveTo(x + rad, y);
+        g.arcTo(x + cw, y, x + cw, y + ch, rad);
+        g.arcTo(x + cw, y + ch, x, y + ch, rad);
+        g.arcTo(x, y + ch, x, y, rad);
+        g.arcTo(x, y, x + cw, y, rad);
+        g.closePath();
+        g.clip();
+        if (d.orientation === 'reversed') {
+          g.translate(x + cw / 2, y + ch / 2);
+          g.rotate(Math.PI);
+          g.drawImage(img, -cw / 2, -ch / 2, cw, ch);
+        } else {
+          g.drawImage(img, x, y, cw, ch);
+        }
+        g.restore();
+        g.strokeStyle = 'rgba(232,197,107,0.55)';
+        g.lineWidth = 2;
+        g.strokeRect(x, y, cw, ch);
+      } catch (e) {
+        // 单张卡图失败不阻断整张海报
+      }
+      cardsBottom = y + ch;
+    }
+
+    // 总览
+    let ty = cardsBottom + 62;
+    g.textAlign = 'left';
+    g.fillStyle = '#f5dfa0';
+    g.font = '600 26px "Noto Serif SC", serif';
+    g.fillText('总 览', 96, ty);
+    ty += 42;
+    g.fillStyle = 'rgba(225,218,245,0.85)';
+    g.font = '24px "Noto Serif SC", serif';
+    ty = drawWrapped(g, currentReading.overview, 96, ty, W - 192, 40, 5);
+
+    // 建议
+    ty += 26;
+    g.fillStyle = '#f5dfa0';
+    g.font = '600 26px "Noto Serif SC", serif';
+    g.fillText('建 议', 96, ty);
+    ty += 42;
+    g.fillStyle = 'rgba(240,232,255,0.95)';
+    g.font = '24px "Noto Serif SC", serif';
+    ty = drawWrapped(g, currentReading.advice, 96, ty, W - 192, 40, 4);
+
+    // 装饰：内容较少时，用一枚淡金魔法阵与星语填补下半部空白
+    if (ty < 1250) {
+      const dy = Math.min(1360, ty + 250);
+      g.save();
+      g.globalAlpha = 0.16;
+      g.strokeStyle = '#e8c56b';
+      [150, 196, 236].forEach((r, i) => {
+        g.lineWidth = i === 0 ? 2 : 1;
+        g.beginPath();
+        g.arc(W / 2, dy, r, 0, Math.PI * 2);
+        g.stroke();
+      });
+      g.beginPath();
+      for (let i = 0; i <= 7; i++) {
+        const idx = (i * 3) % 7;
+        const a = (idx / 7) * Math.PI * 2 - Math.PI / 2;
+        const x = W / 2 + Math.cos(a) * 150;
+        const y = dy + Math.sin(a) * 150;
+        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+      g.restore();
+
+      g.textAlign = 'center';
+      g.fillStyle = 'rgba(245,223,160,0.6)';
+      g.font = '24px "Noto Serif SC", serif';
+      g.fillText('星辰不语，答案在你心里', W / 2, dy + 296);
+    }
+
+    // 页脚
+    g.textAlign = 'center';
+    g.fillStyle = 'rgba(232,197,107,0.75)';
+    g.font = '22px "Noto Serif SC", serif';
+    g.fillText('✦  本站魔力源来自互联网的星辰之力，虔诚即可得到回应  ✦', W / 2, H - 128);
+    g.fillStyle = 'rgba(200,190,230,0.5)';
+    g.font = '20px "Noto Serif SC", serif';
+    g.fillText(location.host + '　·　koka2996978242@outlook.com', W / 2, H - 88);
+
+    const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+    if (!blob) throw new Error('toBlob failed');
+
+    const file = new File([blob], 'starry-tarot.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: '星穹塔罗 · ' + state.spread.name });
+        showToast('已调起系统分享 ✦');
+        return;
+      } catch (e) { /* 用户取消则回退下载 */ }
+    }
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'starry-tarot-' + Date.now() + '.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    showToast('分享图已生成 ✦');
+  } catch (e) {
+    showToast('分享图生成失败，请重试');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 /* ---------- 8. 历史记录（本地保存） ---------- */
 
 function loadReadings() {
@@ -1095,7 +1527,12 @@ function loadReadings() {
 }
 
 function persistReadings(list) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, STORAGE_MAX)));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, STORAGE_MAX)));
+    return true;
+  } catch (e) {
+    return false;   // 隐私模式 / 配额不足
+  }
 }
 
 /** 保存当前解读到本地 */
@@ -1106,30 +1543,52 @@ function saveCurrentReading() {
     date: formatNow(),
     spreadId: state.spread.id,
     spreadName: state.spread.name,
+    category: state.spread.category || 'life',
     count: state.draw.length,
+    // v1.5.0 引擎输出：历史详情可直接还原总览与建议，无需重新推导
+    overview: currentReading ? currentReading.overview : '',
+    advice: currentReading ? currentReading.advice : '',
+    engineText: currentReading ? currentReading.text : '',
     cards: state.draw.map((d, i) => ({
       position: state.spread.positions[i].label,
       orientation: d.orientation,
       name: d.card.name,
       nameEn: d.card.nameEn,
       img: d.card.img,
+      keywords: d.card.keywords,
       meaning: d.card.meaning,
       upright: d.card.upright,
       reversed: d.card.reversed
     }))
   };
   list.unshift(record);
-  persistReadings(list);
-  showToast('解读已保存到本地 ⌁');
+  if (persistReadings(list)) showToast('解读已保存到本地 ⌁');
+  else showToast('本地存储不可用，保存失败');
+}
+
+/** v1.5.2：历史记录筛选（主题 + 关键词） */
+function filterHistory(list) {
+  const q = historyQuery.trim().toLowerCase();
+  return list.filter((rec) => {
+    if (historyFilter !== 'all' && rec.category !== historyFilter) return false;
+    if (!q) return true;
+    const hay = (rec.spreadName + ' ' + rec.cards.map((c) => c.name + ' ' + c.nameEn).join(' ')).toLowerCase();
+    return hay.indexOf(q) !== -1;
+  });
 }
 
 /** 渲染历史列表 */
 function renderHistory() {
-  const list = loadReadings();
+  const all = loadReadings();
+  const list = filterHistory(all);
   const box = $('#history-list');
   box.innerHTML = '';
-  if (!list.length) {
+  if (!all.length) {
     box.innerHTML = '<p class="history-empty">暂无记录，先去占卜一局吧 ☾</p>';
+    return;
+  }
+  if (!list.length) {
+    box.innerHTML = '<p class="history-empty">没有符合条件的记录</p>';
     return;
   }
   for (const rec of list) {
@@ -1149,6 +1608,19 @@ function renderHistory() {
     item.addEventListener('click', () => openDetail(rec));
     box.appendChild(item);
   }
+}
+
+/** v1.5.2：导出全部历史为 JSON */
+function exportHistory() {
+  const list = loadReadings();
+  if (!list.length) { showToast('暂无记录可导出'); return; }
+  const blob = new Blob([JSON.stringify(list, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'starry-tarot-history-' + Date.now() + '.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  showToast('历史记录已导出 ⌁');
 }
 
 function removeReading(id) {
@@ -1172,6 +1644,17 @@ function openDetail(rec) {
        <div class="d-title">${rec.spreadName}</div>
        <div class="d-date">${rec.date}</div>
      </div>`;
+
+  // v1.5.0：历史记录里保存过引擎输出时，还原「总览 / 建议」
+  if (rec.overview) {
+    const ov = document.createElement('section');
+    ov.className = 'reading-overview';
+    ov.innerHTML = '<h3>总览</h3>';
+    const p = document.createElement('p');
+    p.textContent = rec.overview;
+    ov.appendChild(p);
+    box.appendChild(ov);
+  }
   rec.cards.forEach((c, i) => {
     const item = document.createElement('article');
     item.className = 'reading-item';
@@ -1196,10 +1679,26 @@ function openDetail(rec) {
     body.appendChild(head);
     body.appendChild(m);
     body.appendChild(t);
+    if (c.keywords && c.keywords.length) {
+      const kws = document.createElement('div');
+      kws.className = 'r-keywords';
+      kws.innerHTML = c.keywords.map((k) => `<span class="r-kw">${k}</span>`).join('');
+      body.appendChild(kws);
+    }
     item.appendChild(img);
     item.appendChild(body);
     box.appendChild(item);
   });
+
+  if (rec.advice) {
+    const adv = document.createElement('section');
+    adv.className = 'reading-advice';
+    adv.innerHTML = '<h3>建议</h3>';
+    const p = document.createElement('p');
+    p.textContent = rec.advice;
+    adv.appendChild(p);
+    box.appendChild(adv);
+  }
 
   $('#btn-detail-copy').onclick = () => {
     const text = buildDetailText(rec);
@@ -1211,12 +1710,16 @@ function openDetail(rec) {
 /** 生成历史解读的复制文本 */
 function buildDetailText(rec) {
   const lines = [`【星穹塔罗 · ${rec.spreadName}】`, rec.date, ''];
-  rec.cards.forEach((c, i) => {
-    const ori = c.orientation === 'upright' ? '正位' : '逆位';
-    const txt = c.orientation === 'upright' ? c.upright : c.reversed;
-    lines.push(`${i + 1}. ${c.position} · ${c.name}（${ori}）`);
-    lines.push(`   ${txt}`);
-  });
+  if (rec.engineText) {
+    lines.push(rec.engineText);
+  } else {
+    rec.cards.forEach((c, i) => {
+      const ori = c.orientation === 'upright' ? '正位' : '逆位';
+      const txt = c.orientation === 'upright' ? c.upright : c.reversed;
+      lines.push(`${i + 1}. ${c.position} · ${c.name}（${ori}）`);
+      lines.push(`   ${txt}`);
+    });
+  }
   lines.push('');
   lines.push(MAGIC_NOTE);
   lines.push(DISCLAIMER);
@@ -1257,6 +1760,7 @@ function initEvents() {
   });
   // 3D 每翻开一张：计数，全部翻开后亮出「解读」按钮（不再自动跳转）
   window.addEventListener('tarot:flip3d', () => {
+    playFlipSound();          // 3D 翻牌同样有音效（与 2D 共用合成器）
     state.flippedCount += 1;
     if (state.flippedCount >= state.spread.count && !state.allRevealed) {
       // 该事件是 table3d 在翻牌动画**结束时**派发的，所以这里只需很短的一拍
@@ -1305,6 +1809,7 @@ function initEvents() {
   // 解读视图
   $('#btn-copy').addEventListener('click', copyReading);
   $('#btn-save').addEventListener('click', saveCurrentReading);
+  $('#btn-poster').addEventListener('click', makePoster);
   $('#btn-redraw').addEventListener('click', () => startDraw(state.spread));
   $('#btn-reading-home').addEventListener('click', () => showView('home'));
 
@@ -1323,15 +1828,37 @@ function initEvents() {
 
   // 历史操作
   $('#btn-history-clear').addEventListener('click', clearReadings);
+  $('#btn-history-export').addEventListener('click', exportHistory);
+  $('#history-search').addEventListener('input', (e) => {
+    historyQuery = e.target.value || '';
+    renderHistory();
+  });
+  $('#history-filter').addEventListener('change', (e) => {
+    historyFilter = e.target.value || 'all';
+    renderHistory();
+  });
 
   // 页脚版本与页头徽标
   $('#footer-version').textContent = `星穹塔罗 v${APP_VERSION} · 纯前端 · 卡图素材来自公版 Rider-Waite（1909）`;
   $('#version-badge').textContent = `v${APP_VERSION}`;
+
+  // 音效开关（默认开，可关闭；选择持久化）
+  const soundBtn = $('#btn-sound');
+  if (soundBtn) {
+    soundBtn.addEventListener('click', () => {
+      soundOn = !soundOn;
+      localStorage.setItem(SOUND_KEY, soundOn ? '1' : '0');
+      syncSoundToggle();
+      if (soundOn) playFlipSound();
+      showToast(soundOn ? '音效已开启 ✦' : '音效已关闭');
+    });
+  }
 }
 
 function init() {
   initStarfield();
   initEvents();
+  syncSoundToggle();
   showView('home');
 }
 

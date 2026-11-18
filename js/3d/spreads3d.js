@@ -141,6 +141,31 @@ export function getSpreadPositions3d(spread) {
       ];
       break;
 
+    /* ---- v1.5.1 独立布局 ----
+     * 生命之树：3D 用「双柱 + 中轴」的简化构图（完整 6 行树冠在桌面放不下），
+     * 卡牌在 table3d 里按 layout 缩小到 0.68 倍，保证同一列不重叠。
+     */
+    case 'tree':
+      slots = [
+        { x: 0, z: -4.0 },    // 王冠
+        { x: 1.6, z: -2.7 },  // 智慧
+        { x: -1.6, z: -2.7 }, // 理解
+        { x: 1.6, z: -1.0 },  // 慈悲
+        { x: -1.6, z: -1.0 }, // 严厉
+        { x: 0, z: -1.0 },    // 光辉
+        { x: 1.6, z: 0.7 },   // 胜利
+        { x: -1.6, z: 0.7 },  // 荣耀
+        { x: 0, z: 1.9 },     // 基础
+        { x: 0, z: 3.5 }      // 王国
+      ];
+      break;
+
+    case 'chakra':
+      // 七脉轮：单列自下而上（屏幕下方 → 上方）
+      slots = [];
+      for (let i = 0; i < n; i++) slots.push({ x: 0, z: (3 - i) * 1.5 });
+      break;
+
     default:
       slots = rowLayout(n);
   }

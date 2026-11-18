@@ -1031,6 +1031,9 @@ function placeCards(spread, draw) {
   draw.forEach((d, i) => {
     const s = slots[i] || { x: 0, z: 0, y: CFG.cardY, rotY: 0 };
     const group = new THREE.Group();
+    // v1.5.1：高密度牌阵（生命之树 / 七脉轮）缩小卡牌，保证同列不重叠
+    const cardScale = spread.layout === 'tree' ? 0.68 : spread.layout === 'chakra' ? 0.62 : 1;
+    group.scale.setScalar(cardScale);
     // flipper：只承载"翻牌"这一个自由度，与外层的落位/倾倒解耦
     const flipper = new THREE.Group();
 
@@ -1073,6 +1076,7 @@ function placeCards(spread, draw) {
       flipped: false,
       dealt: false,
       animating: false,
+      cardScale: cardScale,
       hoverY: 0
     };
 
@@ -1164,7 +1168,8 @@ function applyAnim(a) {
     const c = a.card;
     // 左右翻：flipper 绕自身 Y 轴 0 → π；同时轻微抬升，避免贴着桌面穿插
     c.flipper.rotation.y = Math.PI * k;
-    c.group.position.y = c.slot.y + Math.sin(a.t * Math.PI) * CFG.flipLift + c.hoverY;
+    const lift = CFG.flipLift * (c.cardScale || 1);   // 小尺寸牌阵按比例降低抬升
+    c.group.position.y = c.slot.y + Math.sin(a.t * Math.PI) * lift + c.hoverY;
   }
 }
 
@@ -1286,7 +1291,8 @@ function loop() {
     if (c.shadow) {
       c.shadow.visible = c.dealt;
       if (c.dealt) {
-        c.shadow.position.z = CFG.shadowY - c.group.position.y;
+        // 阴影是 group 的子节点，会被 group.scale 缩放；除以卡牌缩放才能保持贴桌面
+        c.shadow.position.z = (CFG.shadowY - c.group.position.y) / (c.cardScale || 1);
         c.shadow.scale.setScalar(1 + (c.hoverY / CFG.hoverLift) * 0.16);
       }
     }

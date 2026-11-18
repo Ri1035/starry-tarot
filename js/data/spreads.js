@@ -274,6 +274,113 @@ const TAROT_SPREADS = [
       { label: '你的期望' },
       { label: 'TA的期望' }
     ]
+  },
+
+  /* ---------------- v1.4.1 新增（复用现有布局） ---------------- */
+  {
+    id: 'weekly7',
+    name: '周运七日',
+    desc: '一周七天逐日指引，提前看见节奏与起伏。',
+    count: 7,
+    category: 'time',
+    layout: 'row',
+    info: { scene: '适合周一早晨做一周规划，或想知道某件持续一周的事情会如何演变。', tip: '不要逐日死记，先看哪两天的牌性相反，那往往是节奏转折点。' },
+    positions: [
+      { label: '周一', role: 'future' },
+      { label: '周二', role: 'future' },
+      { label: '周三', role: 'future' },
+      { label: '周四', role: 'future' },
+      { label: '周五', role: 'future' },
+      { label: '周六', role: 'future' },
+      { label: '周日', role: 'future' }
+    ]
+  },
+  {
+    id: 'seasons4',
+    name: '四季运势',
+    desc: '春夏秋冬四张牌，看一年的能量如何轮转。',
+    count: 4,
+    category: 'time',
+    layout: 'grid2',
+    info: { scene: '适合年度规划、想看未来一年整体节奏的人。', tip: '四季不是平均用力：能量最强的那个季节，就是你该押注的窗口。' },
+    positions: [
+      { label: '春 · 萌发', role: 'future' },
+      { label: '夏 · 盛放', role: 'future' },
+      { label: '秋 · 收成', role: 'future' },
+      { label: '冬 · 沉潜', role: 'future' }
+    ]
+  },
+  {
+    id: 'soulmate6',
+    name: '灵魂伴侣',
+    desc: '从两个人到一段关系，六张牌看清连接与走向。',
+    count: 6,
+    category: 'love',
+    layout: 'columns',
+    info: { scene: '适合稳定关系、想确认彼此位置与未来走向的人。', tip: '重点看"连接"与"阻碍"两张是否同色系：同色是助力，冲突色是功课。' },
+    positions: [
+      { label: '你', role: 'self' },
+      { label: '对方', role: 'other' },
+      { label: '你们的连接', role: 'relation' },
+      { label: '阻碍', role: 'obstacle' },
+      { label: '共同成长', role: 'advice' },
+      { label: '关系结果', role: 'outcome' }
+    ]
+  },
+  {
+    id: 'yesno3',
+    name: '是否之轮',
+    desc: '三张牌给出一个倾向明确的答案，而不是含糊其辞。',
+    count: 3,
+    category: 'life',
+    layout: 'row',
+    info: { scene: '适合需要快速决断的小问题：要不要发这条消息、要不要赴约。', tip: '这是一个"倾向"而非"保证"：答案位越强，倾向越明确；阻力位强则先解决阻力。' },
+    positions: [
+      { label: '现状', role: 'present' },
+      { label: '阻力', role: 'obstacle' },
+      { label: '答案', role: 'outcome' }
+    ]
+  },
+
+  /* ---------------- v1.5.1 新增（独立布局） ---------------- */
+  {
+    id: 'tree10',
+    name: '生命之树',
+    desc: '十张牌对应生命之树的十个质点，从王冠到王国。',
+    count: 10,
+    category: 'growth',
+    layout: 'tree',
+    info: { scene: '适合想系统梳理一个长期议题：从最高意图一路看到现实落地。', tip: '从上往下读是"意图如何落地"，从下往上读是"现实如何生长"，两种顺序都成立。' },
+    positions: [
+      { label: '王冠 · 最高意图', role: 'goal' },
+      { label: '智慧 · 洞察', role: 'self' },
+      { label: '理解 · 结构', role: 'self' },
+      { label: '慈悲 · 资源', role: 'support' },
+      { label: '严厉 · 约束', role: 'obstacle' },
+      { label: '光辉 · 核心', role: 'present' },
+      { label: '胜利 · 情绪', role: 'support' },
+      { label: '荣耀 · 思维', role: 'environment' },
+      { label: '基础 · 根基', role: 'foundation' },
+      { label: '王国 · 现实', role: 'outcome' }
+    ]
+  },
+  {
+    id: 'chakra7',
+    name: '七脉轮',
+    desc: '七个脉轮自下而上，照见身体与能量的通畅程度。',
+    count: 7,
+    category: 'growth',
+    layout: 'chakra',
+    info: { scene: '适合身心状态盘点、长期疲惫、想找回内在秩序的时候。', tip: '从下往上读：越靠下的脉轮越基础；某一层逆位，先补它下面的那一层。' },
+    positions: [
+      { label: '海底轮 · 安全感', role: 'foundation' },
+      { label: '本我轮 · 感受', role: 'self' },
+      { label: '太阳轮 · 意志', role: 'self' },
+      { label: '心轮 · 连接', role: 'relation' },
+      { label: '喉轮 · 表达', role: 'advice' },
+      { label: '眉心轮 · 洞察', role: 'advice' },
+      { label: '顶轮 · 意义', role: 'goal' }
+    ]
   }
 ];
 

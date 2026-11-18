@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 安装依赖（仅测试用）
+        run: npm install --no-audit --no-fund
+      - name: 语法检查
+        run: npm run check
+      - name: 解读引擎单测
+        run: npm run test:engine
+
+  # 浏览器 E2E 依赖软件 WebGL，云端较慢且不稳定，改为手动触发
+  e2e:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: 安装 Chrome
+        run: npx puppeteer browsers install chrome
+      - name: 端到端回归
+        run: npm run test:e2e
